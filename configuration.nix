@@ -48,11 +48,9 @@
     pavucontrol
   ];
 
-  # УЛУЧШЕННЫЕ АЛИАСЫ
   environment.shellAliases = {
-    # soberi: Просто пересобрать текущие файлы
-    soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
-    # obnovi: Стянуть конфиг из GitHub + Обновить каналы + Пересобрать систему
+    # Везде добавлен флаг --impure
+    soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos --impure";
     obnovi = "cd /etc/nixos && sudo git pull && sudo nix flake update && soberi";
   };
 
