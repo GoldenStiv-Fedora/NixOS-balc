@@ -38,7 +38,7 @@
 
   environment.systemPackages = with pkgs; [
     pkgs-unstable.gemini-cli
-    #firefox
+    firefox
     git
     vim
     wget
