@@ -20,25 +20,40 @@ jobs:
       - name: Update flake.lock
         run: |
           echo "=== ПРОВЕРКА СТРУКТУРЫ ==="
-          ls -R
+          find . -maxdepth 2 -not -path '*/.*'
           
-          if [ -d "configs" ] && [ -f "configs/flake.nix" ]; then
-            echo "Найдено: configs/flake.nix. Захожу в папку..."
-            cd configs
-            nix flake update --extra-experimental-features "nix-command flakes"
+          # 1. Определяем, где работаем
+          if [ -f "configs/flake.nix" ]; then
+            TARGET_DIR="configs"
           elif [ -f "flake.nix" ]; then
-            echo "Найдено: flake.nix в корне."
-            nix flake update --extra-experimental-features "nix-command flakes"
+            TARGET_DIR="."
           else
-            echo "ОШИБКА: Файл flake.nix не найден ни в корне, ни в configs/!"
-            ls -la
+            echo "ОШИБКА: flake.nix не найден!"
             exit 1
           fi
+
+          # 2. Создаем заглушку железа, чтобы Nix не ругался при чтении конфига
+          # Мы создаем её именно там, где лежит configuration.nix
+          echo "{ ... }: { }" > "$TARGET_DIR/hardware-configuration.nix"
+          echo "Создана временная заглушка в $TARGET_DIR/hardware-configuration.nix"
+          
+          # 3. Обновляем пакеты (указываем путь к флейку явно)
+          nix flake update "./$TARGET_DIR" --extra-experimental-features "nix-command flakes"
+          
+          # 4. Удаляем заглушку перед сохранением в Git
+          rm "$TARGET_DIR/hardware-configuration.nix"
 
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add configs/flake.lock || git add flake.lock
+          
+          # Проверяем, какой файл изменился
+          if [ -f "configs/flake.lock" ]; then
+            git add configs/flake.lock
+          elif [ -f "flake.lock" ]; then
+            git add flake.lock
+          fi
+          
           git commit -m "system: auto-update flake.lock (3-day cycle)" || echo "No changes to commit"
           git push
