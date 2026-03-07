@@ -1,33 +1,53 @@
 { config, pkgs, ... }:
 
 let
+  # Скрипт синхронизации: GitHub -> .sync -> /etc/nixos -> rebuild
   syncScript = pkgs.writeShellScriptBin "nixos-git-sync" ''
     set -e
-    REPO_DIR="/etc/nixos"
+    SYNC_DIR="/etc/nixos/.sync"
+    DEST_DIR="/etc/nixos"
     REMOTE_URL="https://github.com/GoldenStiv-Fedora/NixOS-balc.git"
-    BRANCH="main"
+    
+    mkdir -p $SYNC_DIR
 
-    cd $REPO_DIR
-
-    if [ ! -d ".git" ]; then
-      echo "Git не инициализирован. Пропускаю."
-      exit 0
+    # 1. Тянем данные в .sync
+    if [ ! -d "$SYNC_DIR/.git" ]; then
+      echo "Клонирование репозитория в .sync..."
+      ${pkgs.git}/bin/git clone $REMOTE_URL $SYNC_DIR
     fi
 
-    REMOTE_HASH=$( ${pkgs.git}/bin/git ls-remote $REMOTE_URL -h refs/heads/$BRANCH | cut -f1 )
-    LOCAL_HASH=$( ${pkgs.git}/bin/git rev-parse HEAD )
+    cd $SYNC_DIR
+    ${pkgs.git}/bin/git fetch origin main
 
-    if [ "$REMOTE_HASH" != "$LOCAL_HASH" ] && [ ! -z "$REMOTE_HASH" ]; then
-      echo "Обновление..."
-      ${pkgs.git}/bin/git pull origin $BRANCH
-      # Добавлен флаг --impure
-      ${pkgs.nixos-rebuild}/bin/nixos-rebuild switch --flake /etc/nixos#nixos --impure
+    # 2. Сверяем хеши
+    REMOTE_HASH=$(${pkgs.git}/bin/git rev-parse origin/main)
+    LOCAL_HASH=$(${pkgs.git}/bin/git rev-parse HEAD)
+
+    if [ "$REMOTE_HASH" != "$LOCAL_HASH" ]; then
+      echo "Найдена новая версия! Начинаю обновление..."
+      ${pkgs.git}/bin/git reset --hard origin/main
+      
+      # 3. Копируем конфиги в основную папку
+      echo "Копирование новых конфигов в $DEST_DIR..."
+      cp -rf $SYNC_DIR/* $DEST_DIR/
+      
+      # 4. Обновляем каналы
+      echo "Обновление каналов..."
+      cd $DEST_DIR
+      sudo nix flake update --option experimental-features "nix-command flakes"
+      
+      # 5. Собираем систему
+      echo "Финальная сборка системы..."
+      sudo nixos-rebuild switch --flake .#nixos
+      echo "Обновление завершено!"
+    else
+      echo "Система уже актуальна."
     fi
   '';
 in {
   environment.systemPackages = [ syncScript ];
   systemd.services.nixos-git-sync = {
-    description = "Автоматическое обновление NixOS из Git";
+    description = "Фоновая синхронизация NixOS с GitHub";
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
     serviceConfig = {
@@ -37,12 +57,8 @@ in {
     };
   };
   systemd.timers.nixos-git-sync = {
-    description = "Таймер обновления NixOS (3ч)";
+    description = "Таймер синхронизации (3ч)";
     wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnBootSec = "10min";
-      OnUnitActiveSec = "3h";
-      Unit = "nixos-git-sync.service";
-    };
+    timerConfig = { OnBootSec = "10min"; OnUnitActiveSec = "3h"; Unit = "nixos-git-sync.service"; };
   };
 }

@@ -8,7 +8,7 @@ let
     CONFIG_FILE="$CONFIG_DIR/rdp-connect.conf"
     mkdir -p "$CONFIG_DIR"
 
-    # Загрузка настроек IP и PSK
+    # 1. Загрузка настроек
     if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
       VPN_GATEWAY=$(${pkgs.zenity}/bin/zenity --entry --title="Настройка VPN" --text="Введите ВНЕШНИЙ IP-адрес (VPN шлюз):")
       [ -z "$VPN_GATEWAY" ] && exit 1
@@ -24,11 +24,11 @@ let
       source "$CONFIG_FILE"
     fi
 
-    # Проверка активного VPN
+    # 2. Проверка активного VPN
     VPN_ACTIVE=$(${pkgs.networkmanager}/bin/nmcli connection show --active | grep -w "Server" || true)
 
     if [ -z "$VPN_ACTIVE" ]; then
-      USER_DATA=$(${pkgs.zenity}/bin/zenity --password --username --title="Авторизация (VPN + RDP)")
+      USER_DATA=$(${pkgs.zenity}/bin/zenity --password --username --title="Авторизация")
       [ -z "$USER_DATA" ] && exit 1
       USER_NAME=$(echo "$USER_DATA" | cut -d'|' -f1)
       USER_PASS=$(echo "$USER_DATA" | cut -d'|' -f2)
@@ -38,7 +38,6 @@ let
       echo "vpn.secrets.password:$USER_PASS" > "$SEC_FILE"
       echo "vpn.secrets.ipsec-psk:$VPN_PSK" >> "$SEC_FILE"
 
-      # Настройка и запуск VPN
       ${pkgs.networkmanager}/bin/nmcli connection modify Server vpn.user-name "$USER_NAME" vpn.data "gateway=$VPN_GATEWAY, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, user-auth-type=password, machine-auth-type=psk, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
 
       if ! ${pkgs.networkmanager}/bin/nmcli connection up Server passwd-file "$SEC_FILE"; then
@@ -55,10 +54,10 @@ let
       USER_PASS=$(echo "$USER_DATA" | cut -d'|' -f2)
     fi
 
-    # Запуск RDP (FreeRDP 3.x)
+    # 3. Запуск RDP (FreeRDP 3.x)
     ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" /smartcard /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off,default:visible,show:fullscreen
 
-    # Очистка данных
+    # 4. Очистка
     ${pkgs.networkmanager}/bin/nmcli connection down Server || true
     ${pkgs.networkmanager}/bin/nmcli connection modify Server vpn.user-name "" vpn.data "gateway=, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
   '';

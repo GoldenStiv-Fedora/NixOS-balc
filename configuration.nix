@@ -9,8 +9,19 @@
     ./git-sync.nix
   ];
 
+  # Загрузчик UEFI с ограничением до 4-х сборок
   boot.loader.systemd-boot.enable = true;
+  boot.loader.systemd-boot.configurationLimit = 4;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # Автоматическая очистка и оптимизация
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 7d";
+  };
+  nix.settings.auto-optimise-store = true;
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   networking.hostName = "nixos";
   networking.networkmanager.enable = true;
@@ -48,10 +59,13 @@
     pavucontrol
   ];
 
+  # ПРОЗРАЧНЫЕ АЛИАСЫ
   environment.shellAliases = {
-    # Везде добавлен флаг --impure
-    soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos --impure";
-    obnovi = "cd /etc/nixos && sudo git pull && sudo nix flake update && soberi";
+    # Собрать текущую систему
+    soberi = "sudo nixos-rebuild switch --flake /etc/nixos";
+    
+    # Обновить из Git + Обновить каналы + Собрать
+    obnovi = "cd /etc/nixos/.sync && sudo git pull && sudo cp -rf ./* .. && cd .. && sudo nix flake update && soberi";
   };
 
   system.stateVersion = "25.11"; 
