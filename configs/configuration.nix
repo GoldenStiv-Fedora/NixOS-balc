@@ -62,10 +62,10 @@
   # ПРОЗРАЧНЫЕ АЛИАСЫ
   environment.shellAliases = {
     # Собрать текущую систему
-    soberi = "sudo nixos-rebuild switch --flake /etc/nixos";
+    soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
     
     # Обновить из Git + Обновить каналы + Собрать
-    obnovi = "cd /etc/nixos/.sync && sudo git pull && sudo cp -rf ./* .. && cd .. && sudo nix flake update && soberi";
+    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo cp -rf ./configs/* /etc/nixos/ && soberi";
   };
 
   system.stateVersion = "25.11"; 
