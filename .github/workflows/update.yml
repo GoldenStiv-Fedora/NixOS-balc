@@ -2,15 +2,14 @@ name: "Auto Update NixOS Packages"
 
 on:
   schedule:
-    # Запуск в 03:00 ночи (UTC) каждые 3 дня
     - cron: '0 3 */3 * *'
-  workflow_dispatch: # Кнопка для запуска вручную из интерфейса GitHub
+  workflow_dispatch:
 
 jobs:
   update-flake:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Даем роботу право записывать изменения в ваш репозиторий
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,35 +19,26 @@ jobs:
 
       - name: Update flake.lock
         run: |
-          echo "Проверка структуры файлов..."
+          echo "=== ПРОВЕРКА СТРУКТУРЫ ==="
           ls -R
           
-          # Определяем путь к flake
-          if [ -f "configs/flake.nix" ]; then
-            FLAKE_PATH="./configs"
-            echo "Найдено: configs/flake.nix"
+          if [ -d "configs" ] && [ -f "configs/flake.nix" ]; then
+            echo "Найдено: configs/flake.nix. Захожу в папку..."
+            cd configs
+            nix flake update --extra-experimental-features "nix-command flakes"
           elif [ -f "flake.nix" ]; then
-            FLAKE_PATH="."
-            echo "Найдено: flake.nix в корне"
+            echo "Найдено: flake.nix в корне."
+            nix flake update --extra-experimental-features "nix-command flakes"
           else
-            echo "ОШИБКА: Файл flake.nix не найден! Проверьте структуру на GitHub."
+            echo "ОШИБКА: Файл flake.nix не найден ни в корне, ни в configs/!"
+            ls -la
             exit 1
           fi
-          
-          # Запуск обновления именно для найденного пути
-          nix flake update $FLAKE_PATH --extra-experimental-features "nix-command flakes"
 
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Добавляем именно тот lock-файл, который мог измениться
-          if [ -f "configs/flake.lock" ]; then
-            git add configs/flake.lock
-          elif [ -f "flake.lock" ]; then
-            git add flake.lock
-          fi
-          
+          git add configs/flake.lock || git add flake.lock
           git commit -m "system: auto-update flake.lock (3-day cycle)" || echo "No changes to commit"
           git push
