@@ -1,9 +1,20 @@
 name: "Автоматическое обновление пакетов NixOS"
 
+# Настройка расписания (Cron)
 on:
   schedule:
+    # '0 3 */3 * *' означает: запуск в 03:00 каждые 3 дня.
+    # Чтобы изменить частоту, редактируйте строку ниже:
     - cron: '0 3 */3 * *'
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет запускать вручную кнопкой
+
+env:
+  # Переменные для удобной настройки
+  COMMIT_MSG: "система: автоматическое обновление flake.lock"
+  GIT_USER_NAME: "github-actions[bot]"
+  GIT_USER_EMAIL: "github-actions[bot]@users.noreply.github.com"
+  # Список файлов-заглушек (через пробел)
+  STUB_FILES: "hardware-configuration.nix users.nix rutoken.nix"
 
 jobs:
   update-flake:
@@ -20,39 +31,41 @@ jobs:
 
       - name: "Обновление зависимостей (flake update)"
         run: |
-          # Поиск директории с flake.nix
+          # 1. Поиск директории с конфигурацией
           FLAKE_FILE=$(find . -name "flake.nix" | head -n 1)
           if [ -z "$FLAKE_FILE" ]; then
             echo "Ошибка: файл flake.nix не найден"
             exit 1
           fi
           FLAKE_DIR=$(dirname "$FLAKE_FILE")
-          echo "Файл flake.nix найден в директории: $FLAKE_DIR"
-
-          # Заходим в директорию с флейком
+          echo "Файл найден в: $FLAKE_DIR"
+          
           cd "$FLAKE_DIR"
 
-          # Создание временных заглушек для импортов
-          touch hardware-configuration.nix
-          echo "{ ... }: { }" > hardware-configuration.nix
-          touch users.nix
-          echo "{ ... }: { }" > users.nix
-          touch rutoken.nix
-          echo "{ ... }: { }" > rutoken.nix
+          # 2. Создание временных заглушек из переменной STUB_FILES
+          for file in ${{ env.STUB_FILES }}; do
+            if [ ! -f "$file" ]; then
+              echo "{ ... }: { }" > "$file"
+              echo "Создана заглушка: $file"
+            fi
+          done
 
-          # Обновление flake.lock (запуск внутри директории)
+          # 3. Обновление пакетов
           nix flake update --extra-experimental-features "nix-command flakes"
 
-          # Удаление заглушек
-          rm hardware-configuration.nix users.nix rutoken.nix
+          # 4. Удаление временных заглушек
+          for file in ${{ env.STUB_FILES }}; do
+            # Удаляем файл только если он не в списке git (на всякий случай)
+            rm -f "$file"
+          done
 
       - name: "Сохранение изменений в GitHub"
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ env.GIT_USER_NAME }}"
+          git config user.email "${{ env.GIT_USER_EMAIL }}"
           
-          # Поиск и добавление обновленного flake.lock
+          # Находим и добавляем именно тот файл, который обновился
           find . -name "flake.lock" -exec git add {} +
           
-          git commit -m "система: автоматическое обновление flake.lock" || echo "Нет изменений для коммита"
+          git commit -m "${{ env.COMMIT_MSG }}" || echo "Нет изменений для коммита"
           git push
