@@ -16,13 +16,15 @@ jobs:
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v12
+        with:
+          # Отключаем кэш, так как он сейчас не работает на стороне GitHub
+          use-github-cache: false
 
       - name: Update flake.lock
         run: |
           echo "=== ПРОВЕРКА СТРУКТУРЫ ==="
           find . -maxdepth 2 -not -path '*/.*'
           
-          # 1. Определяем, где работаем
           if [ -f "configs/flake.nix" ]; then
             TARGET_DIR="configs"
           elif [ -f "flake.nix" ]; then
@@ -32,15 +34,17 @@ jobs:
             exit 1
           fi
 
-          # 2. Создаем заглушку железа, чтобы Nix не ругался при чтении конфига
-          # Мы создаем её именно там, где лежит configuration.nix
+          echo "Работаем в директории: $TARGET_DIR"
+          
+          # Создаем заглушку железа, чтобы Nix не падал при чтении configuration.nix
+          # Также создаем заглушки для других файлов, если их вдруг нет
+          touch "$TARGET_DIR/hardware-configuration.nix"
           echo "{ ... }: { }" > "$TARGET_DIR/hardware-configuration.nix"
-          echo "Создана временная заглушка в $TARGET_DIR/hardware-configuration.nix"
           
-          # 3. Обновляем пакеты (указываем путь к флейку явно)
-          nix flake update "./$TARGET_DIR" --extra-experimental-features "nix-command flakes"
+          # Запуск обновления с выводом полной ошибки
+          nix flake update "./$TARGET_DIR" --extra-experimental-features "nix-command flakes" --show-trace
           
-          # 4. Удаляем заглушку перед сохранением в Git
+          # Удаляем временный файл
           rm "$TARGET_DIR/hardware-configuration.nix"
 
       - name: Commit and push changes
@@ -48,7 +52,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Проверяем, какой файл изменился
           if [ -f "configs/flake.lock" ]; then
             git add configs/flake.lock
           elif [ -f "flake.lock" ]; then
