@@ -29,19 +29,22 @@ jobs:
           FLAKE_DIR=$(dirname "$FLAKE_FILE")
           echo "Файл flake.nix найден в директории: $FLAKE_DIR"
 
-          # Создание временных заглушек для импортов
-          touch "$FLAKE_DIR/hardware-configuration.nix"
-          echo "{ ... }: { }" > "$FLAKE_DIR/hardware-configuration.nix"
-          touch "$FLAKE_DIR/users.nix"
-          echo "{ ... }: { }" > "$FLAKE_DIR/users.nix"
-          touch "$FLAKE_DIR/rutoken.nix"
-          echo "{ ... }: { }" > "$FLAKE_DIR/rutoken.nix"
+          # Заходим в директорию с флейком
+          cd "$FLAKE_DIR"
 
-          # Обновление flake.lock
-          nix flake update "$FLAKE_DIR" --extra-experimental-features "nix-command flakes"
+          # Создание временных заглушек для импортов
+          touch hardware-configuration.nix
+          echo "{ ... }: { }" > hardware-configuration.nix
+          touch users.nix
+          echo "{ ... }: { }" > users.nix
+          touch rutoken.nix
+          echo "{ ... }: { }" > rutoken.nix
+
+          # Обновление flake.lock (запуск внутри директории)
+          nix flake update --extra-experimental-features "nix-command flakes"
 
           # Удаление заглушек
-          rm "$FLAKE_DIR/hardware-configuration.nix" "$FLAKE_DIR/users.nix" "$FLAKE_DIR/rutoken.nix"
+          rm hardware-configuration.nix users.nix rutoken.nix
 
       - name: "Сохранение изменений в GitHub"
         run: |
