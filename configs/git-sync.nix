@@ -29,12 +29,12 @@ let
       
       # 3. Копируем конфиги в основную папку
       echo "Копирование новых конфигов в $DEST_DIR..."
-      cp -rf $SYNC_DIR/* $DEST_DIR/
+      cp -rf $SYNC_DIR/configs/* $DEST_DIR/
       
-      # 4. Обновляем каналы
-      echo "Обновление каналов..."
+      # 4. Обновляем каналы (в этой версии каналы не обновляем это делает робот на гитхабе мы берем уже готовый .lock и клонируем на локальные пк)
+      #echo "Обновление каналов..."
       cd $DEST_DIR
-      sudo nix flake update --option experimental-features "nix-command flakes"
+      #sudo nix flake update --option experimental-features "nix-command flakes"
       
       # 5. Собираем систему
       echo "Финальная сборка системы..."
