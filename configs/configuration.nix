@@ -64,8 +64,8 @@
     # Собрать текущую систему
     soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
     
-    # Обновить из Git + Обновить каналы + Собрать
-    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo cp -rfT ./configs/ /etc/nixos/ && cd /etc/nixos && sudo nix flake update && soberi";
+    # Обновить из Git + Обновить каналы + Собрать (Защита: исключаем hardware-configuration.nix)
+    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && cd /etc/nixos && sudo nix flake update && soberi";
   };
 
   system.stateVersion = "25.11"; 

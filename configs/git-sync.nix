@@ -27,9 +27,9 @@ let
       echo "Найдена новая версия! Начинаю обновление..."
       ${pkgs.git}/bin/git reset --hard origin/main
       
-      # 3. Копируем конфиги в основную папку
+      # 3. Копируем конфиги в основную папку (Защита: исключаем hardware-configuration.nix)
       echo "Копирование новых конфигов в $DEST_DIR..."
-      cp -rf $SYNC_DIR/configs/* $DEST_DIR/
+      ${pkgs.rsync}/bin/rsync -a $SYNC_DIR/configs/ $DEST_DIR/ --exclude=hardware-configuration.nix
 
       # 4. Обновление библиотеки обоев
       echo "Обновление библиотеки обоев..."
