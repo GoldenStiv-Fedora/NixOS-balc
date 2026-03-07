@@ -19,12 +19,14 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v12
 
       - name: Update flake.lock
-        run: nix flake update
+        run: |
+          cd configs
+          nix flake update --extra-experimental-features "nix-command flakes"
 
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add flake.lock
-          git commit -m "system: auto-update flake.lock (3-day cycle)" || echo "No changes to commit"
+          git add configs/flake.lock
+          git commit -m "system: auto-update configs/flake.lock (3-day cycle)" || echo "No changes to commit"
           git push
