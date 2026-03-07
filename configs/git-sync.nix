@@ -30,22 +30,23 @@ let
       # 3. Копируем конфиги в основную папку
       echo "Копирование новых конфигов в $DEST_DIR..."
       cp -rf $SYNC_DIR/configs/* $DEST_DIR/
-      
-      # 4. Обновляем каналы (в этой версии каналы не обновляем это делает робот на гитхабе мы берем уже готовый .lock и клонируем на локальные пк)
-      #echo "Обновление каналов..."
-      cd $DEST_DIR
-      #sudo nix flake update --option experimental-features "nix-command flakes"
+
+      # 4. Обновление библиотеки обоев
+      echo "Обновление библиотеки обоев..."
+      mkdir -p /usr/share/backgrounds/balc
+      ${pkgs.rsync}/bin/rsync -a --delete $SYNC_DIR/imag/ /usr/share/backgrounds/balc/
+      chmod -R 755 /usr/share/backgrounds/balc
       
       # 5. Собираем систему
       echo "Финальная сборка системы..."
-      sudo nixos-rebuild switch --flake .#nixos
+      sudo nixos-rebuild switch --flake /etc/nixos#nixos
       echo "Обновление завершено!"
     else
       echo "Система уже актуальна."
     fi
   '';
 in {
-  environment.systemPackages = [ syncScript ];
+  environment.systemPackages = [ syncScript pkgs.rsync ];
   systemd.services.nixos-git-sync = {
     description = "Фоновая синхронизация NixOS с GitHub";
     after = [ "network-online.target" ];
