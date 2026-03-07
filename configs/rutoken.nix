@@ -11,38 +11,36 @@ let
       sha256 = "18cdch725482smg29zrbnb83d6x735ls0pi1rnrl7jif32wgmi3x";
     };
 
-    nativeBuildInputs = [ pkgs.dpkg ];
+    # autoPatchelfHook автоматически пропишет пути к библиотекам (RPATH) в бинарник
+    nativeBuildInputs = [ pkgs.dpkg pkgs.autoPatchelfHook ];
+    
+    # Библиотека libusb-compat-0_1 предоставляет libusb-0.1.so.4
+    buildInputs = [ pkgs.libusb-compat-0_1 pkgs.pcsclite ];
 
     unpackPhase = "dpkg-deb -x $src .";
 
-    # В NixOS модуль pcscd ищет плагины по пути $out/pcsc/drivers
     installPhase = ''
-      # Создаем целевую структуру по стандарту NixOS
+      # Создаем целевую структуру по стандарту PCSC Bundle
       DEST=$out/pcsc/drivers/ifd-rutokens.bundle/Contents
       mkdir -p $DEST/Linux
       
-      # Ищем файлы в распакованном архиве (игнорируя битые ссылки)
+      # Копируем файлы
       find . -name "Info.plist" -exec cp -L {} $DEST/ \;
       find . -name "librutokens.so" -exec cp -L {} $DEST/Linux/ \;
       
-      # Исправление путей внутри Info.plist для Nix Store
+      # Исправляем Info.plist (относительный путь)
       chmod +w $DEST/Info.plist
-      sed -i "s|librutokens.so|$DEST/Linux/librutokens.so|g" $DEST/Info.plist
+      sed -i "s|<string>.*librutokens.so</string>|<string>librutokens.so</string>|g" $DEST/Info.plist
     '';
   };
 
 in {
-  # Служба для работы со смарт-картами
   services.pcscd.enable = true;
-  
-  # Добавляем драйверы в pcscd
-  # NixOS автоматически объединит их в один PCSCLITE_HP_DROPDIR
   services.pcscd.plugins = [ 
     pkgs.ccid 
     ifd-rutokens 
   ];
 
-  # Утилиты для работы с ЭЦП и диагностики
   environment.systemPackages = with pkgs; [
     opensc
     pkcs11helper
@@ -52,10 +50,8 @@ in {
     usbutils
   ];
 
-  # Разрешение пользователям работать со смарт-картами без пароля Root
   security.polkit.enable = true;
 
-  # Настройка обнаружения устройств Рутокен
   services.udev.extraRules = ''
     # Rutoken S (HID модель)
     SUBSYSTEM=="usb", ATTR{idVendor}=="0a89", ATTR{idProduct}=="0020", MODE="0664", GROUP="wheel", ENV{ID_SMARTCARD_READER}="1"
