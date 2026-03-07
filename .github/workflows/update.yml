@@ -1,4 +1,4 @@
-name: "Auto Update NixOS Packages"
+name: "NIX_AUTO_REPAIR_SERVICE"
 
 on:
   schedule:
@@ -11,52 +11,50 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout repository
+      - name: STEP_1_CHECKOUT
         uses: actions/checkout@v4
 
-      - name: Install Nix
+      - name: STEP_2_INSTALL_NIX
         uses: DeterminateSystems/nix-installer-action@v12
         with:
           use-github-cache: false
 
-      - name: DEBUG - Список всех файлов
+      - name: STEP_3_DEBUG_FILES
         run: |
-          echo "Проверяем содержимое репозитория:"
+          echo "Я ВИЖУ ЭТИ ФАЙЛЫ:"
           find . -maxdepth 3 -not -path '*/.*'
 
-      - name: Обновление пакетов
+      - name: STEP_4_ACTUAL_UPDATE
         run: |
-          # Автоматический поиск flake.nix
+          # Ищем flake.nix
           FLAKE_FILE=$(find . -name "flake.nix" | head -n 1)
           
           if [ -z "$FLAKE_FILE" ]; then
-            echo "ОШИБКА: файл flake.nix не найден в репозитории!"
+            echo "ОШИБКА: flake.nix НЕ НАЙДЕН!"
             exit 1
           fi
           
           FLAKE_DIR=$(dirname "$FLAKE_FILE")
-          echo "Файл flake.nix найден в директории: $FLAKE_DIR"
+          echo "РАБОТАЮ В ПАПКЕ: $FLAKE_DIR"
           
-          # Создаем заглушку для железа, чтобы Nix не ругался на импорты
+          # Создаем все заглушки
+          touch "$FLAKE_DIR/hardware-configuration.nix"
           echo "{ ... }: { }" > "$FLAKE_DIR/hardware-configuration.nix"
+          touch "$FLAKE_DIR/users.nix"
           echo "{ ... }: { }" > "$FLAKE_DIR/users.nix"
+          touch "$FLAKE_DIR/rutoken.nix"
           echo "{ ... }: { }" > "$FLAKE_DIR/rutoken.nix"
           
-          # Запуск обновления
+          # Запуск
           nix flake update "$FLAKE_DIR" --extra-experimental-features "nix-command flakes"
           
-          # Удаляем заглушки перед коммитом
-          rm "$FLAKE_DIR/hardware-configuration.nix"
-          rm "$FLAKE_DIR/users.nix"
-          rm "$FLAKE_DIR/rutoken.nix"
+          # Удаление
+          rm "$FLAKE_DIR/hardware-configuration.nix" "$FLAKE_DIR/users.nix" "$FLAKE_DIR/rutoken.nix"
 
-      - name: Commit and push changes
+      - name: STEP_5_PUSH_CHANGES
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Добавляем все найденные flake.lock файлы
           find . -name "flake.lock" -exec git add {} +
-          
           git commit -m "system: auto-update flake.lock" || echo "No changes to commit"
           git push
