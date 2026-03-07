@@ -17,14 +17,19 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v12
         with:
-          # Отключаем кэш, так как он сейчас не работает на стороне GitHub
+          # Игнорируем проблемы с кэшем GitHub
           use-github-cache: false
+          # Пропускаем проверку кэша при сбоях GitHub
+          magic-nix-cache-config: ""
 
       - name: Update flake.lock
         run: |
-          echo "=== ПРОВЕРКА СТРУКТУРЫ ==="
+          echo "=== ТЕКУЩАЯ ДИРЕКТОРИЯ ==="
+          pwd
+          echo "=== ПОИСК ФАЙЛОВ ==="
           find . -maxdepth 2 -not -path '*/.*'
-          
+
+          # Определяем папку с флейком
           if [ -f "configs/flake.nix" ]; then
             TARGET_DIR="configs"
           elif [ -f "flake.nix" ]; then
@@ -34,17 +39,17 @@ jobs:
             exit 1
           fi
 
-          echo "Работаем в директории: $TARGET_DIR"
-          
-          # Создаем заглушку железа, чтобы Nix не падал при чтении configuration.nix
-          # Также создаем заглушки для других файлов, если их вдруг нет
-          touch "$TARGET_DIR/hardware-configuration.nix"
+          echo "Использую папку: $TARGET_DIR"
+
+          # Создаем заглушку железа ТАМ ЖЕ, где лежит flake.nix
+          # Это нужно, чтобы Nix не ругался на отсутствие импортов
           echo "{ ... }: { }" > "$TARGET_DIR/hardware-configuration.nix"
-          
-          # Запуск обновления с выводом полной ошибки
+          echo "Временный файл создан: $TARGET_DIR/hardware-configuration.nix"
+
+          # Запуск обновления. Мы указываем путь к папке явно.
           nix flake update "./$TARGET_DIR" --extra-experimental-features "nix-command flakes" --show-trace
-          
-          # Удаляем временный файл
+
+          # Удаляем заглушку перед отправкой в Git
           rm "$TARGET_DIR/hardware-configuration.nix"
 
       - name: Commit and push changes
@@ -52,6 +57,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
+          # Добавляем именно тот lock-файл, который был обновлен
           if [ -f "configs/flake.lock" ]; then
             git add configs/flake.lock
           elif [ -f "flake.lock" ]; then
