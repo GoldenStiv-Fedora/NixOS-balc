@@ -4,7 +4,7 @@ on:
   schedule:
     # Запуск в 03:00 ночи (UTC) каждые 3 дня
     - cron: '0 3 */3 * *'
-  workflow_dispatch: # Кнопка для запуска обновления вручную из интерфейса GitHub
+  workflow_dispatch: # Кнопка для запуска вручную из интерфейса GitHub
 
 jobs:
   update-flake:
@@ -20,13 +20,35 @@ jobs:
 
       - name: Update flake.lock
         run: |
-          cd configs
-          nix flake update --extra-experimental-features "nix-command flakes"
+          echo "Проверка структуры файлов..."
+          ls -R
+          
+          # Определяем путь к flake
+          if [ -f "configs/flake.nix" ]; then
+            FLAKE_PATH="./configs"
+            echo "Найдено: configs/flake.nix"
+          elif [ -f "flake.nix" ]; then
+            FLAKE_PATH="."
+            echo "Найдено: flake.nix в корне"
+          else
+            echo "ОШИБКА: Файл flake.nix не найден! Проверьте структуру на GitHub."
+            exit 1
+          fi
+          
+          # Запуск обновления именно для найденного пути
+          nix flake update $FLAKE_PATH --extra-experimental-features "nix-command flakes"
 
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add configs/flake.lock
-          git commit -m "system: auto-update configs/flake.lock (3-day cycle)" || echo "No changes to commit"
+          
+          # Добавляем именно тот lock-файл, который мог измениться
+          if [ -f "configs/flake.lock" ]; then
+            git add configs/flake.lock
+          elif [ -f "flake.lock" ]; then
+            git add flake.lock
+          fi
+          
+          git commit -m "system: auto-update flake.lock (3-day cycle)" || echo "No changes to commit"
           git push
