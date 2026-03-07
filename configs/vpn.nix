@@ -55,11 +55,14 @@ let
     fi
 
     # 3. Запуск RDP (FreeRDP 3.x)
+    # Явно указываем путь к 64-битной библиотеке PCSC, чтобы избежать ELFCLASS32 ошибки
+    PCSC_LIB=$(ls -d /nix/store/*-pcsclite-*-lib/lib/libpcsclite.so.1 | head -n 1)
+    export LD_PRELOAD="$PCSC_LIB"
+    
     ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" /smartcard /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off,default:visible,show:fullscreen
 
     # 4. Очистка
     ${pkgs.networkmanager}/bin/nmcli connection down Server || true
-    ${pkgs.networkmanager}/bin/nmcli connection modify Server vpn.user-name "" vpn.data "gateway=, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
   '';
 
 in {
@@ -69,7 +72,7 @@ in {
   systemd.tmpfiles.rules = [ "d /etc/ipsec.d 0700 root root -" ]; 
   environment.etc."strongswan.conf".text = "charon { }";
 
-  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.libnotify pkgs.zenity ];
+  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.libnotify pkgs.zenity pkgs.pcsclite ];
 
   networking.networkmanager.ensureProfiles.profiles = {
     "Server" = {
@@ -79,31 +82,8 @@ in {
         gateway = ""; user = ""; "user-auth-type" = "password"; "password-flags" = "2";
         "ipsec-enabled" = "yes"; "machine-auth-type" = "psk"; "ipsec-psk-flags" = "2";
         "mru" = "1400"; "mtu" = "1400";
-        "refuse-chap" = "yes"; "refuse-eap" = "yes"; "refuse-mschap" = "yes"; "refuse-mschapv2" = "no"; "refuse-pap" = "yes";
+        "refuse-chap" = "yes"; "refuse-mschap" = "yes"; "refuse-mschapv2" = "no"; "refuse-pap" = "yes"; "refuse-eap" = "yes";
       };
     };
-  };
-
-  system.activationScripts.desktopShortcuts = {
-    text = ''
-      for user_home in /home/*; do
-        if [ -d "$user_home/Desktop" ]; then
-          cat <<DESK > "$user_home/Desktop/Connect_RDP.desktop"
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Подключиться к Серверу
-Comment=VPN + RDP + Смарт-карты
-Exec=connect-rdp
-Icon=network-vpn
-Terminal=false
-Categories=Network;
-DESK
-          OWNER=$(stat -c '%U' "$user_home/Desktop")
-          chown $OWNER "$user_home/Desktop/Connect_RDP.desktop"
-          chmod +x "$user_home/Desktop/Connect_RDP.desktop"
-        fi
-      done
-    '';
   };
 }

@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   # Скрипт автоматической настройки рабочего стола
@@ -47,7 +47,7 @@ in {
     text = ''
       # Шаблон ярлыка
       mkdir -p /etc/skel/Desktop
-      printf "[Desktop Entry]\nVersion=1.0\nType=Application\nName=Подключиться к RDP\nComment=Запуск VPN и RDP сессии\nExec=connect-rdp\nIcon=network-vpn\nTerminal=false\nCategories=Network;\n" > /etc/skel/Desktop/connect.desktop
+      printf "[Desktop Entry]\nVersion=1.0\nType=Application\nName=Подключиться к RDP\nComment=Запуск VPN и RDP сессии\nExec=connect-rdp\nIcon=computer\nTerminal=false\nCategories=Network;\n" > /etc/skel/Desktop/connect.desktop
       chmod +x /etc/skel/Desktop/connect.desktop
 
       # Копируем всем существующим и удаляем старые дубликаты

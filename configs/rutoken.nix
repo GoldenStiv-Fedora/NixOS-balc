@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   # Официальный драйвер для Rutoken S (HID)
@@ -15,17 +15,28 @@ let
 
     unpackPhase = "dpkg-deb -x $src .";
 
+    # В NixOS модуль pcscd ищет плагины по пути $out/pcsc/drivers
     installPhase = ''
-      mkdir -p $out/lib/pcsc/drivers
-      cp -r usr/lib/pcsc/drivers/* $out/lib/pcsc/drivers/
+      # Создаем целевую структуру по стандарту NixOS
+      DEST=$out/pcsc/drivers/ifd-rutokens.bundle/Contents
+      mkdir -p $DEST/Linux
+      
+      # Ищем файлы в распакованном архиве (игнорируя битые ссылки)
+      find . -name "Info.plist" -exec cp -L {} $DEST/ \;
+      find . -name "librutokens.so" -exec cp -L {} $DEST/Linux/ \;
+      
+      # Исправление путей внутри Info.plist для Nix Store
+      chmod +w $DEST/Info.plist
+      sed -i "s|librutokens.so|$DEST/Linux/librutokens.so|g" $DEST/Info.plist
     '';
   };
 
 in {
-  # Служба для работы со смарт-картами (необходима для RDP)
+  # Служба для работы со смарт-картами
   services.pcscd.enable = true;
   
-  # Добавляем наш свежесобранный драйвер в плагины pcscd
+  # Добавляем драйверы в pcscd
+  # NixOS автоматически объединит их в один PCSCLITE_HP_DROPDIR
   services.pcscd.plugins = [ 
     pkgs.ccid 
     ifd-rutokens 
