@@ -3,31 +3,47 @@
 let
   # Скрипт автоматической настройки рабочего стола
   setup-xfce-wallpaper = pkgs.writeShellScriptBin "setup-xfce-wallpaper" ''
-    # Ждем загрузки рабочего стола
+    # Ждем загрузки рабочего стола и инициализации xfconf
     sleep 15
+    XFCONF="${pkgs.xfce.xfconf}/bin/xfconf-query"
+    IMAGE_DIR="/usr/share/backgrounds/balc"
 
-    # Находим все активные мониторы и рабочие области
-    MONITORS=$(xfconf-query -c xfce4-desktop -l | grep "last-image" | sed 's/\/last-image//')
-    
-    # Находим любой первый файл изображения в папке
-    FIRST_IMAGE=$(ls -1 /usr/share/backgrounds/balc/*.{png,jpg,jpeg} 2>/dev/null | head -n 1)
-
-    if [ -z "$FIRST_IMAGE" ]; then
-      echo "Обои не найдены в /usr/share/backgrounds/balc/"
+    # Проверка наличия картинок
+    if [ ! -d "$IMAGE_DIR" ] || [ -z "$(ls -A "$IMAGE_DIR" 2>/dev/null)" ]; then
+      echo "Обои не найдены в $IMAGE_DIR"
       exit 0
     fi
 
+    # Динамический поиск всех путей мониторов в XFCE
+    # Ищем всё, что относится к мониторам и рабочим столам
+    MONITORS=$($XFCONF -c xfce4-desktop -l | grep "workspace0" | sed 's/\/last-image//; s/\/image-path//; s/\/backdrop-cycle-enable//; s/\/image-style//; s/\/backdrop-cycle-period//; s/\/backdrop-cycle-random-order//' | sort -u)
+
+    # Если на абсолютно чистой системе веток еще нет, добавляем стандартные
+    if [ -z "$MONITORS" ]; then
+        echo "Мониторы не определены в xfconf, использую стандартные пути"
+        MONITORS="/backdrop/screen0/monitor0/workspace0 /backdrop/screen0/monitorVirtual1/workspace0"
+    fi
+
     for m in $MONITORS; do
-      # Указываем ПУТЬ К ФАЙЛУ (обязательно для XFCE)
-      xfconf-query -c xfce4-desktop -p "$m/last-image" -n -t string -s "$FIRST_IMAGE"
-      # Включаем циклическую смену
-      xfconf-query -c xfce4-desktop -p "$m/backdrop-cycle-enable" -n -t bool -s true
-      # Период: 4 (Daily / Раз в день)
-      xfconf-query -c xfce4-desktop -p "$m/backdrop-cycle-period" -n -t int -s 4
-      # Стиль: 5 (Zoomed / Заполнить)
-      xfconf-query -c xfce4-desktop -p "$m/image-style" -n -t int -s 5
-      # Случайный порядок
-      xfconf-query -c xfce4-desktop -p "$m/backdrop-cycle-random-order" -n -t bool -s true
+      echo "Применяю настройки для монитора: $m"
+      
+      # 1. Указываем папку (image-path) вместо одного файла (last-image)
+      $XFCONF -c xfce4-desktop -p "$m/image-path" -n -t string -s "$IMAGE_DIR"
+      
+      # 2. Включаем циклическую смену (автоматически подхватит все файлы из папки)
+      $XFCONF -c xfce4-desktop -p "$m/backdrop-cycle-enable" -n -t bool -s true
+      
+      # 3. Стиль: 5 (Растянуть/Заполнить)
+      $XFCONF -c xfce4-desktop -p "$m/image-style" -n -t int -s 5
+      
+      # 4. Период смены: 4 (Раз в день)
+      $XFCONF -c xfce4-desktop -p "$m/backdrop-cycle-period" -n -t int -s 4
+      
+      # 5. Случайный порядок
+      $XFCONF -c xfce4-desktop -p "$m/backdrop-cycle-random-order" -n -t bool -s true
+      
+      # 6. Сбрасываем last-image, чтобы XFCE перечитал папку
+      $XFCONF -c xfce4-desktop -p "$m/last-image" -r 2>/dev/null || true
     done
   '';
 in {
@@ -47,16 +63,23 @@ in {
     text = ''
       # Шаблон ярлыка
       mkdir -p /etc/skel/Desktop
-      printf "[Desktop Entry]\nVersion=1.0\nType=Application\nName=Подключиться к RDP\nComment=Запуск VPN и RDP сессии\nExec=connect-rdp\nIcon=computer\nTerminal=false\nCategories=Network;\n" > /etc/skel/Desktop/connect.desktop
+      printf "[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Подключиться к RDP
+Comment=Запуск VPN и RDP сессии
+Exec=connect-rdp
+Icon=computer
+Terminal=false
+Categories=Network;
+" > /etc/skel/Desktop/connect.desktop
       chmod +x /etc/skel/Desktop/connect.desktop
 
-      # Копируем всем существующим и удаляем старые дубликаты
+      # Копируем всем существующим пользователям
       for user_home in /home/*; do
         if [ -d "$user_home" ]; then
           mkdir -p "$user_home/Desktop"
-          # Удаление старого имени ярлыка
           rm -f "$user_home/Desktop/Connect_RDP.desktop"
-          # Копирование нового
           cp /etc/skel/Desktop/connect.desktop "$user_home/Desktop/"
           chown -R $(basename "$user_home") "$user_home/Desktop"
           chmod +x "$user_home/Desktop/connect.desktop"
