@@ -1,51 +1,58 @@
 { config, pkgs, lib, ... }:
 
 let
-  # Скрипт автоматической настройки рабочего стола
+  # Скрипт автоматической настройки рабочего стола (v2.0 - Universal)
   setup-xfce-wallpaper = pkgs.writeShellScriptBin "setup-xfce-wallpaper" ''
-    # Ждем загрузки рабочего стола и инициализации xfconf
-    sleep 15
+    # Ждем загрузки рабочего стола и инициализации служб
+    sleep 10
+    
     XFCONF="${pkgs.xfce.xfconf}/bin/xfconf-query"
+    XRANDR="${pkgs.xorg.xrandr}/bin/xrandr"
     IMAGE_DIR="/usr/share/backgrounds/balc"
 
     # Проверка наличия картинок
     if [ ! -d "$IMAGE_DIR" ] || [ -z "$(ls -A "$IMAGE_DIR" 2>/dev/null)" ]; then
-      echo "Обои не найдены в $IMAGE_DIR"
       exit 0
     fi
 
-    # Динамический поиск всех путей мониторов в XFCE
-    # Ищем всё, что относится к мониторам и рабочим столам
-    MONITORS=$($XFCONF -c xfce4-desktop -l | grep "workspace0" | sed 's/\/last-image//; s/\/image-path//; s/\/backdrop-cycle-enable//; s/\/image-style//; s/\/backdrop-cycle-period//; s/\/backdrop-cycle-random-order//' | sort -u)
+    # 1. Получаем список РЕАЛЬНО подключенных мониторов через xrandr
+    # Это позволяет скрипту работать на любом железе (Intel/AMD/Nvidia/VM)
+    REAL_MONITORS=$($XRANDR | grep " connected" | awk '{print $1}')
+    
+    # 2. Добавляем резервные имена (monitor0 - стандарт для XFCE, Virtual1 - для VM)
+    TARGET_MONITORS="$REAL_MONITORS monitor0 Virtual1"
 
-    # Если на абсолютно чистой системе веток еще нет, добавляем стандартные
-    if [ -z "$MONITORS" ]; then
-        echo "Мониторы не определены в xfconf, использую стандартные пути"
-        MONITORS="/backdrop/screen0/monitor0/workspace0 /backdrop/screen0/monitorVirtual1/workspace0"
-    fi
-
-    for m in $MONITORS; do
-      echo "Применяю настройки для монитора: $m"
+    for m in $TARGET_MONITORS; do
+      # Формируем путь настроек XFCE: /backdrop/screen0/monitor<ИМЯ>/workspace0
+      PREFIX="/backdrop/screen0/monitor$m/workspace0"
       
-      # 1. Указываем папку (image-path) вместо одного файла (last-image)
-      $XFCONF -c xfce4-desktop -p "$m/image-path" -n -t string -s "$IMAGE_DIR"
+      # 3. Сбрасываем привязку к конкретному файлу (last-image), чтобы XFCE начал использовать папку
+      # Флаг -r удаляет свойство, -R рекурсивно (на всякий случай)
+      $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -r -R 2>/dev/null || true
       
-      # 2. Включаем циклическую смену (автоматически подхватит все файлы из папки)
-      $XFCONF -c xfce4-desktop -p "$m/backdrop-cycle-enable" -n -t bool -s true
+      # 4. Устанавливаем папку с изображениями
+      $XFCONF -c xfce4-desktop -p "$PREFIX/image-path" -n -t string -s "$IMAGE_DIR"
       
-      # 3. Стиль: 5 (Растянуть/Заполнить)
-      $XFCONF -c xfce4-desktop -p "$m/image-style" -n -t int -s 5
+      # 5. Включаем ротацию (циклическую смену)
+      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-enable" -n -t bool -s true
       
-      # 4. Период смены: 4 (Раз в день)
-      $XFCONF -c xfce4-desktop -p "$m/backdrop-cycle-period" -n -t int -s 4
+      # 6. Стиль: 5 = Zoom (Заполнение/Растянуть)
+      $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -n -t int -s 5
       
-      # 5. Случайный порядок
-      $XFCONF -c xfce4-desktop -p "$m/backdrop-cycle-random-order" -n -t bool -s true
+      # 7. Период смены (совместимость с разными версиями XFCE)
+      # Обычно 4 = Daily (Ежедневно) или при входе.
+      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -n -t int -s 4
+      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-timer" -n -t int -s 4
       
-      # 6. Сбрасываем last-image, чтобы XFCE перечитал папку
-      $XFCONF -c xfce4-desktop -p "$m/last-image" -r 2>/dev/null || true
+      # 8. Случайный порядок
+      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-random-order" -n -t bool -s true
     done
+
+    # 9. Принудительно обновляем рабочий стол, чтобы применить изменения
+    ${pkgs.xfce.xfdesktop}/bin/xfdesktop --reload 2>/dev/null || 
+    ${pkgs.procps}/bin/pkill -USR1 xfdesktop || true
   '';
+
 in {
   # Глобальный автозапуск для XFCE
   environment.etc."xdg/autostart/balc-wallpaper.desktop".text = ''
