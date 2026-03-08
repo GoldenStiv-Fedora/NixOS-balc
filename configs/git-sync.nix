@@ -10,6 +10,10 @@ let
     
     mkdir -p $SYNC_DIR
 
+    # Исправление ошибки "dubious ownership" (безопасность Git)
+    # Это позволит запускать команды git от root в этой папке без ошибок
+    ${pkgs.git}/bin/git config --global --add safe.directory $SYNC_DIR || true
+
     # 1. Тянем данные в .sync
     if [ ! -d "$SYNC_DIR/.git" ]; then
       echo "Клонирование репозитория в .sync..."
