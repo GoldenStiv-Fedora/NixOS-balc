@@ -96,14 +96,18 @@ Categories=Network;
       # Копируем всем существующим пользователям
       for user_home in /home/*; do
         if [ -d "$user_home" ]; then
-          mkdir -p "$user_home/Desktop"
-          cp /etc/skel/Desktop/connect.desktop "$user_home/Desktop/"
           user_name=$(basename "$user_home")
           if id "$user_name" >/dev/null 2>&1; then
-            # Устанавливаем владельца и его основную группу
             user_group=$(id -gn "$user_name")
-            chown -R "$user_name:$user_group" "$user_home/Desktop"
-            chmod +x "$user_home/Desktop/connect.desktop"
+            
+            # Список папок, где может быть рабочий стол
+            for d in "Desktop" "Рабочий стол"; do
+              TARGET_DIR="$user_home/$d"
+              mkdir -p "$TARGET_DIR"
+              cp /etc/skel/Desktop/connect.desktop "$TARGET_DIR/"
+              chown -R "$user_name:$user_group" "$TARGET_DIR"
+              chmod +x "$TARGET_DIR/connect.desktop"
+            done
           fi
         fi
       done
