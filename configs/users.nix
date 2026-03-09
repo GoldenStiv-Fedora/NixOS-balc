@@ -58,7 +58,7 @@ in {
   environment.etc."xdg/autostart/balc-wallpaper.desktop".text = ''
     [Desktop Entry]
     Type=Application
-    Name=Balc Wallpaper Setup
+    Name=balc Wallpaper Setup
     Comment=Настройка обоев из Git
     Exec=${setup-xfce-wallpaper}/bin/setup-xfce-wallpaper
     Terminal=false
