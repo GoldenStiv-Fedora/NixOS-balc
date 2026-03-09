@@ -97,11 +97,12 @@ Categories=Network;
       for user_home in /home/*; do
         if [ -d "$user_home" ]; then
           mkdir -p "$user_home/Desktop"
-          rm -f "$user_home/Desktop/Connect_RDP.desktop"
           cp /etc/skel/Desktop/connect.desktop "$user_home/Desktop/"
           user_name=$(basename "$user_home")
           if id "$user_name" >/dev/null 2>&1; then
-            chown -R "$user_name" "$user_home/Desktop"
+            # Устанавливаем владельца и его основную группу
+            user_group=$(id -gn "$user_name")
+            chown -R "$user_name:$user_group" "$user_home/Desktop"
             chmod +x "$user_home/Desktop/connect.desktop"
           fi
         fi

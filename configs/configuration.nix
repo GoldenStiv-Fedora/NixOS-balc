@@ -46,6 +46,8 @@
 
   services.xserver.enable = true;
   services.xserver.displayManager.lightdm.enable = true;
+  services.xserver.displayManager.lightdm.greeters.gtk.extraConfig = "activate-numlock=true";
+  services.xserver.displayManager.sessionCommands = "${pkgs.numlockx}/bin/numlockx on";
   services.xserver.desktopManager.xfce.enable = true;
   services.xserver.xkb = {
     layout = "us,ru";
@@ -69,6 +71,7 @@
     vim
     wget
     usbutils
+    numlockx
     xfce.xfce4-pulseaudio-plugin
     xfce.xfce4-xkb-plugin
     pavucontrol
