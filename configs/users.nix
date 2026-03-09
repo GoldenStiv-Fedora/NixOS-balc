@@ -1,56 +1,67 @@
 { config, pkgs, lib, ... }:
 
 let
-  # Скрипт автоматической настройки рабочего стола (v2.0 - Universal)
+  # Скрипт автоматической настройки рабочего стола (v2.1 - Enhanced Reliability)
   setup-xfce-wallpaper = pkgs.writeShellScriptBin "setup-xfce-wallpaper" ''
-    # Ждем загрузки рабочего стола и инициализации служб
-    sleep 10
-    
-    XFCONF="${pkgs.xfce.xfconf}/bin/xfconf-query"
-    XRANDR="${pkgs.xorg.xrandr}/bin/xrandr"
+    # 1. Ждем загрузки рабочего стола (несколько попыток для надежности при первом входе)
     IMAGE_DIR="/usr/share/backgrounds/balc"
-
+    XFCONF="${pkgs.xfce.xfconf}/bin/xfconf-query"
+    
     # Проверка наличия картинок
     if [ ! -d "$IMAGE_DIR" ] || [ -z "$(ls -A "$IMAGE_DIR" 2>/dev/null)" ]; then
       exit 0
     fi
 
-    # 1. Получаем список РЕАЛЬНО подключенных мониторов через xrandr
-    # Это позволяет скрипту работать на любом железе (Intel/AMD/Nvidia/VM)
-    REAL_MONITORS=$($XRANDR | grep " connected" | awk '{print $1}')
-    
-    # 2. Добавляем резервные имена (monitor0 - стандарт для XFCE, Virtual1 - для VM)
-    TARGET_MONITORS="$REAL_MONITORS monitor0 Virtual1"
+    FIRST_IMAGE=$(ls -1 "$IMAGE_DIR"/*.{jpg,jpeg,png,webp} 2>/dev/null | head -n 1)
 
-    for m in $TARGET_MONITORS; do
-      # Формируем путь настроек XFCE: /backdrop/screen0/monitor<ИМЯ>/workspace0
-      PREFIX="/backdrop/screen0/monitor$m/workspace0"
+    apply_settings() {
+      # Получаем список всех существующих путей для мониторов в xfconf
+      # Это самый надежный способ найти активные экраны
+      MONITORS=$($XFCONF -c xfce4-desktop -p /backdrop -l | grep "workspace0/last-image" | cut -d'/' -f4 | sort -u)
       
-      # 3. Сбрасываем привязку к конкретному файлу (last-image), чтобы XFCE начал использовать папку
-      # Флаг -r удаляет свойство, -R рекурсивно (на всякий случай)
-      $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -r -R 2>/dev/null || true
-      
-      # 4. Устанавливаем папку с изображениями
-      $XFCONF -c xfce4-desktop -p "$PREFIX/image-path" -n -t string -s "$IMAGE_DIR"
-      
-      # 5. Включаем ротацию (циклическую смену)
-      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-enable" -n -t bool -s true
-      
-      # 6. Стиль: 5 = Zoom (Заполнение/Растянуть)
-      $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -n -t int -s 5
-      
-      # 7. Период смены (совместимость с разными версиями XFCE)
-      # Обычно 4 = Daily (Ежедневно) или при входе.
-      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -n -t int -s 4
-      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-timer" -n -t int -s 4
-      
-      # 8. Случайный порядок
-      $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-random-order" -n -t bool -s true
+      # Если xfconf еще пуст (первый запуск), используем дефолтные имена
+      if [ -z "$MONITORS" ]; then
+        MONITORS="monitor0 monitor1 monitorVirtual1 monitorHDMI-1 monitoreDP-1"
+      fi
+
+      for m in $MONITORS; do
+        # Убираем возможный префикс "monitor", если он уже есть в переменной, 
+        # чтобы избежать "monitormonitor0"
+        MON_NAME=$(echo "$m" | sed 's/^monitor//')
+        PREFIX="/backdrop/screen0/monitor$MON_NAME/workspace0"
+        
+        # А) Устанавливаем ПЕРВОЕ изображение сразу (чтобы не ждать ротации)
+        if [ -n "$FIRST_IMAGE" ]; then
+          $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -n -t string -s "$FIRST_IMAGE" 2>/dev/null || 
+          $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -s "$FIRST_IMAGE"
+        fi
+        
+        # Б) Настраиваем папку и ротацию
+        $XFCONF -c xfce4-desktop -p "$PREFIX/image-path" -n -t string -s "$IMAGE_DIR" 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/image-path" -s "$IMAGE_DIR"
+        
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-enable" -n -t bool -s true 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-enable" -s true
+        
+        $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -n -t int -s 5 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -s 5
+        
+        # Период смены: 4 = Daily (раз в сутки/при входе)
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -n -t int -s 4 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -s 4
+        
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-random-order" -n -t bool -s true 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-random-order" -s true
+      done
+    }
+
+    # Делаем 3 попытки с интервалом, чтобы "поймать" инициализацию xfdesktop
+    for i in 1 2 3; do
+      sleep 10
+      apply_settings
+      # Принудительно обновляем рабочий стол
+      ${pkgs.xfce.xfdesktop}/bin/xfdesktop --reload 2>/dev/null || true
     done
-
-    # 9. Принудительно обновляем рабочий стол, чтобы применить изменения
-    ${pkgs.xfce.xfdesktop}/bin/xfdesktop --reload 2>/dev/null || 
-    ${pkgs.procps}/bin/pkill -USR1 xfdesktop || true
   '';
 
 in {
