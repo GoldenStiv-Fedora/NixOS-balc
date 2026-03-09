@@ -97,14 +97,14 @@ Categories=Network;
 
   environment.systemPackages = [ setup-xfce-wallpaper ];
 
-  users.users.Balc = {
+  users.users.balc = {
     isNormalUser = true;
     description = "Balc";
     extraGroups = [ "networkmanager" "wheel" ];
     initialPassword = "13579";
   };
 
-  users.users.User = {
+  users.users.user = {
     isNormalUser = true;
     description = "User";
     extraGroups = [ "networkmanager" ];
