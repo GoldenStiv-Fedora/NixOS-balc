@@ -12,7 +12,8 @@ let
       exit 0
     fi
 
-    FIRST_IMAGE=$(ls -1 "$IMAGE_DIR"/*.{jpg,jpeg,png,webp} 2>/dev/null | head -n 1)
+    # Выбираем случайное изображение сразу (чтобы при каждом входе было разное)
+    RANDOM_IMAGE=$(ls -1 "$IMAGE_DIR"/*.{jpg,jpeg,png,webp} 2>/dev/null | shuf -n 1)
 
     apply_settings() {
       # Получаем список всех существующих путей для мониторов в xfconf
@@ -30,10 +31,10 @@ let
         MON_NAME=$(echo "$m" | sed 's/^monitor//')
         PREFIX="/backdrop/screen0/monitor$MON_NAME/workspace0"
         
-        # А) Устанавливаем ПЕРВОЕ изображение сразу (чтобы не ждать ротации)
-        if [ -n "$FIRST_IMAGE" ]; then
-          $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -n -t string -s "$FIRST_IMAGE" 2>/dev/null || 
-          $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -s "$FIRST_IMAGE"
+        # А) Устанавливаем СЛУЧАЙНОЕ изображение сразу (чтобы не ждать ротации)
+        if [ -n "$RANDOM_IMAGE" ]; then
+          $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -n -t string -s "$RANDOM_IMAGE" 2>/dev/null || 
+          $XFCONF -c xfce4-desktop -p "$PREFIX/last-image" -s "$RANDOM_IMAGE"
         fi
         
         # Б) Настраиваем папку и ротацию
@@ -46,9 +47,9 @@ let
         $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -n -t int -s 5 2>/dev/null || 
         $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -s 5
         
-        # Период смены: 4 = Daily (раз в сутки/при входе)
-        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -n -t int -s 4 2>/dev/null || 
-        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -s 4
+        # Период смены: 5 = Startup (при входе/запуске)
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -n -t int -s 5 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -s 5
         
         $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-random-order" -n -t bool -s true 2>/dev/null || 
         $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-random-order" -s true
