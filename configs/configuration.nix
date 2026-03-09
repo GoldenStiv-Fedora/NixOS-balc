@@ -9,10 +9,25 @@
     ./git-sync.nix
   ];
 
-  # Загрузчик UEFI с ограничением до 4-х сборок
+  # Загрузчик UEFI с ограничением до 4-х сборок и максимально тихой загрузкой
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 4;
   boot.loader.efi.canTouchEfiVariables = true;
+  boot.loader.timeout = 0; # Скрыть меню выбора (удерживайте клавишу для вызова)
+
+  # Максимально тихая загрузка (Silent Boot)
+  boot.consoleLogLevel = 0;
+  boot.initrd.verbose = false;
+  boot.kernelParams = [
+    "quiet"
+    "splash"
+    "boot.shell_on_fail=false"
+    "loglevel=3"
+    "rd.systemd.show_status=false"
+    "rd.udev.log_level=3"
+    "udev.log_priority=3"
+  ];
+  boot.plymouth.enable = true;
 
   # Автоматическая очистка и оптимизация
   nix.gc = {
