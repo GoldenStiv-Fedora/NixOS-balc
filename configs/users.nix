@@ -88,8 +88,11 @@ Categories=Network;
           mkdir -p "$user_home/Desktop"
           rm -f "$user_home/Desktop/Connect_RDP.desktop"
           cp /etc/skel/Desktop/connect.desktop "$user_home/Desktop/"
-          chown -R $(basename "$user_home") "$user_home/Desktop"
-          chmod +x "$user_home/Desktop/connect.desktop"
+          user_name=$(basename "$user_home")
+          if id "$user_name" >/dev/null 2>&1; then
+            chown -R "$user_name" "$user_home/Desktop"
+            chmod +x "$user_home/Desktop/connect.desktop"
+          fi
         fi
       done
     '';
