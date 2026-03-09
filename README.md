@@ -67,12 +67,14 @@
 Для ввода нового ПК в эксплуатацию достаточно установить чистую NixOS и выполнить одну "Золотую команду":
 
 ```bash
-sudo nix-env -iA nixos.git nixos.rsync && 
-sudo mkdir -p /etc/nixos/.sync && 
-sudo git clone https://github.com/GoldenStiv-Fedora/NixOS-balc.git /etc/nixos/.sync && 
-sudo rsync -a /etc/nixos/.sync/configs/ /etc/nixos/ --exclude=hardware-configuration.nix && 
-sudo nixos-rebuild switch --flake /etc/nixos#nixos --option experimental-features "nix-command flakes" && 
-sudo nixos-git-sync
+sudo nix-env -iA nixos.git nixos.rsync && \
+sudo mkdir -p /etc/nixos/.sync && \
+sudo git clone --filter=blob:none --sparse https://github.com/GoldenStiv-Fedora/NixOS-balc.git /etc/nixos/.sync && \
+cd /etc/nixos/.sync && \
+sudo git sparse-checkout set configs imag && \
+sudo rsync -a /etc/nixos/.sync/configs/ /etc/nixos/ --exclude=hardware-configuration.nix && \
+sudo nixos-rebuild switch --flake /etc/nixos#nixos --option experimental-features "nix-command flakes"
+
 ```
 
 ### Что произойдет после запуска:
