@@ -45,6 +45,7 @@
   i18n.defaultLocale = "ru_RU.UTF-8";
 
   services.xserver.enable = true;
+  services.xserver.displayManager.setupCommands = "${pkgs.numlockx}/bin/numlockx on";
   services.xserver.displayManager.lightdm.enable = true;
   services.xserver.displayManager.lightdm.greeters.gtk.extraConfig = "activate-numlock=true";
   services.xserver.displayManager.sessionCommands = "${pkgs.numlockx}/bin/numlockx on";
