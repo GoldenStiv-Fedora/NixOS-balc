@@ -16,8 +16,10 @@ let
 
     # 1. Тянем данные в .sync
     if [ ! -d "$SYNC_DIR/.git" ]; then
-      echo "Клонирование репозитория в .sync..."
-      ${pkgs.git}/bin/git clone $REMOTE_URL $SYNC_DIR
+      echo "Клонирование репозитория в .sync (sparse mode)..."
+      ${pkgs.git}/bin/git clone --filter=blob:none --sparse $REMOTE_URL $SYNC_DIR
+      cd $SYNC_DIR
+      ${pkgs.git}/bin/git sparse-checkout set configs imag
     fi
 
     cd $SYNC_DIR
