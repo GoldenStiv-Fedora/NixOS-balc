@@ -47,7 +47,7 @@ let
       ${pkgs.rsync}/bin/rsync -a $SYNC_DIR/configs/ $DEST_DIR/ --exclude=hardware-configuration.nix
 
       echo "Финальная сборка системы..."
-      nixos-rebuild switch --flake /etc/nixos#nixos
+      /run/current-system/sw/bin/nixos-rebuild switch --flake /etc/nixos#nixos
       echo "Обновление системы завершено!"
     else
       echo "Конфигурация системы уже актуальна. Картинки синхронизированы."
