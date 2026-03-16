@@ -76,7 +76,7 @@
     xfce.xfce4-pulseaudio-plugin
     xfce.xfce4-xkb-plugin
     pavucontrol
-    remmina
+    #remmina
   ];
 
   # ПРОЗРАЧНЫЕ АЛИАСЫ
