@@ -15,11 +15,20 @@ let
     
     [ -z "$PROTO" ] && exit 0
 
+    # 2. ДАННЫЕ ДЛЯ ВХОДА RDP
+    RDP_DATA=$(zenity --forms --title="Авторизация RDP ($PROTO)" --width=500 \
+      --text="Введите данные пользователя для RDP" \
+      --add-entry="Логин пользователя" \
+      --add-password="Пароль пользователя" \
+      --separator="|")
+
+    [ -z "$RDP_DATA" ] && exit 0
+    U_NAME=$(echo "$RDP_DATA" | cut -d'|' -f1)
+    U_PASS=$(echo "$RDP_DATA" | cut -d'|' -f2)
+
     # --- СЦЕНАРИЙ L2TP ---
     if [ "$PROTO" == "L2TP" ]; then
       L2TP_CONF="$CONFIG_DIR/l2tp.conf"
-      
-      # 2. ПОИСК И СОЗДАНИЕ КОНФИГА L2TP
       if [ ! -f "$L2TP_CONF" ]; then
         L_DATA=$(zenity --forms --title="Первичная настройка L2TP" --width=500 \
           --text="Введите параметры сервера" \
@@ -28,26 +37,13 @@ let
           --add-entry="Ключ IPsec PSK" \
           --separator="|")
         [ -z "$L_DATA" ] && exit 0
-        
         echo "VPN_GATEWAY=$(echo $L_DATA | cut -d'|' -f1)" > "$L2TP_CONF"
         echo "RDP_SERVER=$(echo $L_DATA | cut -d'|' -f2)" >> "$L2TP_CONF"
         echo "VPN_PSK=$(echo $L_DATA | cut -d'|' -f3)" >> "$L2TP_CONF"
       fi
       source "$L2TP_CONF"
-
-      # 3. ЗАПРОС ЛОГИНА И ПАРОЛЯ RDP
-      RDP_DATA=$(zenity --forms --title="Авторизация RDP (L2TP)" --width=500 \
-        --add-entry="Логин пользователя" --add-password="Пароль пользователя" --separator="|")
-      [ -z "$RDP_DATA" ] && exit 0
-      U_NAME=$(echo "$RDP_DATA" | cut -d'|' -f1)
-      U_PASS=$(echo "$RDP_DATA" | cut -d'|' -f2)
-
-      # 4. ПОДКЛЮЧЕНИЕ (В ТОЧНОСТИ КАК В ИСХОДНИКЕ)
       SEC=$(mktemp); echo "vpn.secrets.password:$U_PASS" > "$SEC"; echo "vpn.secrets.ipsec-psk:$VPN_PSK" >> "$SEC"
-      
-      nmcli connection modify Server vpn.user-name "$U_NAME" vpn.data \
-      "gateway=$VPN_GATEWAY, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, user-auth-type=password, machine-auth-type=psk, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
-
+      nmcli connection modify Server vpn.user-name "$U_NAME" vpn.data "gateway=$VPN_GATEWAY, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, user-auth-type=password, machine-auth-type=psk, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
       if ! nmcli connection up Server passwd-file "$SEC"; then
         zenity --error --text="Ошибка: Не удалось установить соединение L2TP!" --width=400
         rm "$SEC"; exit 1
@@ -58,7 +54,6 @@ let
     # --- СЦЕНАРИЙ WIRE GUARD ---
     if [ "$PROTO" == "WireGuard" ]; then
       SAMBA_CONF="$CONFIG_DIR/wg_samba.conf"
-
       if [ ! -f "$SAMBA_CONF" ]; then
         R_IP=$(cat /etc/router_ip 2>/dev/null || echo "192.168.1.1")
         S_DATA=$(zenity --forms --title="Настройка диска" --width=500 \
@@ -72,15 +67,7 @@ let
         echo "SAMBA_PASS=$(echo "$S_DATA" | cut -d'|' -f3)" >> "$SAMBA_CONF"
       fi
       source "$SAMBA_CONF"
-
-      RDP_DATA=$(zenity --forms --title="Авторизация RDP (WireGuard)" --width=500 \
-        --add-entry="Логин пользователя" --add-password="Пароль пользователя" --separator="|")
-      [ -z "$RDP_DATA" ] && exit 0
-      U_NAME=$(echo "$RDP_DATA" | cut -d'|' -f1)
-      U_PASS=$(echo "$RDP_DATA" | cut -d'|' -f2)
-
-      U_WG_CONF="$CONFIG_DIR/wireguard_users/$U_NAME.conf"
-
+      U_WG_CONF="$WG_USERS_DIR/$U_NAME.conf"
       if [ ! -f "$U_WG_CONF" ]; then
         MNT=$(mktemp -d)
         if sudo mount -t cifs "//$SAMBA_IP/wireguard_configs" "$MNT" -o "user=$SAMBA_USER,password=$SAMBA_PASS,vers=2.0,iocharset=utf8" 2>/dev/null; then
@@ -90,12 +77,10 @@ let
         fi
         rmdir "$MNT"
       fi
-
       if [ ! -f "$U_WG_CONF" ]; then
         zenity --error --text="Ошибка: Конфиг '$U_NAME.conf' не найден на диске!" --width=400
         exit 1
       fi
-
       nmcli connection delete wg-rdp 2>/dev/null || true
       nmcli connection import type wireguard file "$U_WG_CONF" name wg-rdp
       if ! nmcli connection up wg-rdp; then
@@ -106,14 +91,15 @@ let
       [ -f "$CONFIG_DIR/l2tp.conf" ] && RDP_SERVER=$(grep RDP_SERVER "$CONFIG_DIR/l2tp.conf" | cut -d'=' -f2)
     fi
 
-    # --- ОБЩИЙ ЗАПУСК RDP ---
+    # --- ЗАПУСК RDP ---
     if [ -z "$RDP_SERVER" ]; then
       RDP_SERVER=$(zenity --entry --title="Настройка RDP" --text="Введите IP адрес сервера:" --width=500)
     fi
 
     echo "Ожидание стабилизации сети (1 сек)..."
     sleep 1
-    export LD_PRELOAD=$(find /nix/store -name libpcsclite.so.1 | head -n 1)
+    
+    export LD_PRELOAD="${pkgs.pcsclite}/lib/libpcsclite.so.1"
     xfreerdp /v:"$RDP_SERVER" /u:"$U_NAME" /p:"$U_PASS" /smartcard /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off
 
     [ -n "$VPN_CONN" ] && nmcli connection down "$VPN_CONN" || true
