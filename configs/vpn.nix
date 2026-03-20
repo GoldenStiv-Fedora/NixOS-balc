@@ -1,119 +1,82 @@
 { config, pkgs, ... }:
 
 let
+  # Скрипт подключения RDP через VPN
   connectScript = pkgs.writeShellScriptBin "connect-rdp" ''
     #!/bin/bash
-    CONFIG_DIR="$HOME/.config/rdp-system"
-    WG_USERS_DIR="$CONFIG_DIR/wireguard_users"
-    mkdir -p "$WG_USERS_DIR"
+    CONFIG_DIR="$HOME/.config"
+    CONFIG_FILE="$CONFIG_DIR/rdp-connect.conf"
+    mkdir -p "$CONFIG_DIR"
 
-    # 1. ВЫБОР ПРОТОКОЛА
-    PROTO=$(zenity --list --radiolist --title="Выбор подключения" --width=500 --height=350 \
-      --text="Выберите протокол для работы:" \
-      --column="Выбор" --column="Протокол" \
-      TRUE "WireGuard" FALSE "L2TP")
-    
-    [ -z "$PROTO" ] && exit 0
-
-    # 2. ДАННЫЕ ДЛЯ ВХОДА RDP
-    RDP_DATA=$(zenity --forms --title="Авторизация RDP ($PROTO)" --width=500 \
-      --text="Введите данные пользователя для RDP" \
-      --add-entry="Логин пользователя" \
-      --add-password="Пароль пользователя" \
-      --separator="|")
-
-    [ -z "$RDP_DATA" ] && exit 0
-    U_NAME=$(echo "$RDP_DATA" | cut -d'|' -f1)
-    U_PASS=$(echo "$RDP_DATA" | cut -d'|' -f2)
-
-    # --- СЦЕНАРИЙ L2TP ---
-    if [ "$PROTO" == "L2TP" ]; then
-      L2TP_CONF="$CONFIG_DIR/l2tp.conf"
-      if [ ! -f "$L2TP_CONF" ]; then
-        L_DATA=$(zenity --forms --title="Первичная настройка L2TP" --width=500 \
-          --text="Введите параметры сервера" \
-          --add-entry="Внешний IP адрес VPN" \
-          --add-entry="Внутренний IP адрес RDP сервера" \
-          --add-entry="Ключ IPsec PSK" \
-          --separator="|")
-        [ -z "$L_DATA" ] && exit 0
-        echo "VPN_GATEWAY=$(echo $L_DATA | cut -d'|' -f1)" > "$L2TP_CONF"
-        echo "RDP_SERVER=$(echo $L_DATA | cut -d'|' -f2)" >> "$L2TP_CONF"
-        echo "VPN_PSK=$(echo $L_DATA | cut -d'|' -f3)" >> "$L2TP_CONF"
-      fi
-      source "$L2TP_CONF"
-      SEC=$(mktemp); echo "vpn.secrets.password:$U_PASS" > "$SEC"; echo "vpn.secrets.ipsec-psk:$VPN_PSK" >> "$SEC"
-      nmcli connection modify Server vpn.user-name "$U_NAME" vpn.data "gateway=$VPN_GATEWAY, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, user-auth-type=password, machine-auth-type=psk, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
-      if ! nmcli connection up Server passwd-file "$SEC"; then
-        zenity --error --text="Ошибка: Не удалось установить соединение L2TP!" --width=400
-        rm "$SEC"; exit 1
-      fi
-      rm "$SEC"; VPN_CONN="Server"
+    # 1. Загрузка настроек
+    if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
+      VPN_GATEWAY=$(${pkgs.zenity}/bin/zenity --entry --title="Настройка VPN" --text="Введите ВНЕШНИЙ IP-адрес (VPN шлюз):")
+      [ -z "$VPN_GATEWAY" ] && exit 1
+      RDP_SERVER=$(${pkgs.zenity}/bin/zenity --entry --title="Настройка RDP" --text="Введите ВНУТРЕННИЙ IP-адрес сервера RDP:")
+      [ -z "$RDP_SERVER" ] && exit 1
+      VPN_PSK=$(${pkgs.zenity}/bin/zenity --entry --title="Настройка PSK" --text="Введите ключ IPsec PSK:" --hide-text)
+      [ -z "$VPN_PSK" ] && exit 1
+      echo "VPN_GATEWAY=$VPN_GATEWAY" > "$CONFIG_FILE"
+      echo "RDP_SERVER=$RDP_SERVER" >> "$CONFIG_FILE"
+      echo "VPN_PSK=$VPN_PSK" >> "$CONFIG_FILE"
+      chmod 600 "$CONFIG_FILE"
+    else
+      source "$CONFIG_FILE"
     fi
 
-    # --- СЦЕНАРИЙ WIRE GUARD ---
-    if [ "$PROTO" == "WireGuard" ]; then
-      SAMBA_CONF="$CONFIG_DIR/wg_samba.conf"
-      if [ ! -f "$SAMBA_CONF" ]; then
-        R_IP=$(cat /etc/router_ip 2>/dev/null || echo "192.168.1.1")
-        S_DATA=$(zenity --forms --title="Настройка диска" --width=500 \
-          --text="Введите данные для доступа к роутеру ($R_IP)" \
-          --add-entry="IP адрес роутера" --add-entry="Логин Samba" --add-password="Пароль Samba" \
-          --separator="|")
-        [ -z "$S_DATA" ] && exit 0
-        S_IP=$(echo "$S_DATA" | cut -d'|' -f1); [ -z "$S_IP" ] && S_IP="$R_IP"
-        echo "SAMBA_IP=$S_IP" > "$SAMBA_CONF"
-        echo "SAMBA_USER=$(echo "$S_DATA" | cut -d'|' -f2)" >> "$SAMBA_CONF"
-        echo "SAMBA_PASS=$(echo "$S_DATA" | cut -d'|' -f3)" >> "$SAMBA_CONF"
-      fi
-      source "$SAMBA_CONF"
-      U_WG_CONF="$WG_USERS_DIR/$U_NAME.conf"
-      if [ ! -f "$U_WG_CONF" ]; then
-        MNT=$(mktemp -d)
-        if sudo mount -t cifs "//$SAMBA_IP/wireguard_configs" "$MNT" -o "user=$SAMBA_USER,password=$SAMBA_PASS,vers=2.0,iocharset=utf8" 2>/dev/null; then
-          F_PATH=$(find "$MNT" -maxdepth 1 -iname "$U_NAME.conf" | head -n 1)
-          [ -n "$F_PATH" ] && cp "$F_PATH" "$U_WG_CONF" && chmod 600 "$U_WG_CONF"
-          sudo umount "$MNT"
-        fi
-        rmdir "$MNT"
-      fi
-      if [ ! -f "$U_WG_CONF" ]; then
-        zenity --error --text="Ошибка: Конфиг '$U_NAME.conf' не найден на диске!" --width=400
+    # 2. Проверка активного VPN
+    VPN_ACTIVE=$(${pkgs.networkmanager}/bin/nmcli connection show --active | grep -w "Server" || true)
+
+    if [ -z "$VPN_ACTIVE" ]; then
+      USER_DATA=$(${pkgs.zenity}/bin/zenity --password --username --title="Авторизация")
+      [ -z "$USER_DATA" ] && exit 1
+      USER_NAME=$(echo "$USER_DATA" | cut -d'|' -f1)
+      USER_PASS=$(echo "$USER_DATA" | cut -d'|' -f2)
+
+      SEC_FILE=$(mktemp)
+      chmod 600 "$SEC_FILE"
+      echo "vpn.secrets.password:$USER_PASS" > "$SEC_FILE"
+      echo "vpn.secrets.ipsec-psk:$VPN_PSK" >> "$SEC_FILE"
+
+      ${pkgs.networkmanager}/bin/nmcli connection modify Server vpn.user-name "$USER_NAME" vpn.data "gateway=$VPN_GATEWAY, ipsec-enabled=yes, ipsec-psk-flags=2, password-flags=2, user-auth-type=password, machine-auth-type=psk, refuse-chap=yes, refuse-mschap=yes, refuse-mschapv2=no, refuse-pap=yes, refuse-eap=yes"
+
+      if ! ${pkgs.networkmanager}/bin/nmcli connection up Server passwd-file "$SEC_FILE"; then
+        rm "$SEC_FILE"
+        ${pkgs.zenity}/bin/zenity --error --text="Ошибка подключения VPN!"
         exit 1
       fi
-      nmcli connection delete wg-rdp 2>/dev/null || true
-      nmcli connection import type wireguard file "$U_WG_CONF" name wg-rdp
-      if ! nmcli connection up wg-rdp; then
-        zenity --error --text="Ошибка: Не удалось поднять соединение WireGuard!" --width=400
-        exit 1
-      fi
-      VPN_CONN="wg-rdp"
-      [ -f "$CONFIG_DIR/l2tp.conf" ] && RDP_SERVER=$(grep RDP_SERVER "$CONFIG_DIR/l2tp.conf" | cut -d'=' -f2)
+      rm "$SEC_FILE"
+      sleep 2
+    else
+      USER_DATA=$(${pkgs.zenity}/bin/zenity --password --username --title="RDP Авторизация")
+      [ -z "$USER_DATA" ] && exit 1
+      USER_NAME=$(echo "$USER_DATA" | cut -d'|' -f1)
+      USER_PASS=$(echo "$USER_DATA" | cut -d'|' -f2)
     fi
 
-    # --- ЗАПУСК RDP ---
-    if [ -z "$RDP_SERVER" ]; then
-      RDP_SERVER=$(zenity --entry --title="Настройка RDP" --text="Введите IP адрес сервера:" --width=500)
-    fi
-
-    echo "Ожидание стабилизации сети (1 сек)..."
-    sleep 1
+    # 3. Запуск RDP (FreeRDP 3.x)
+    # Явно указываем путь к 64-битной библиотеке PCSC, чтобы избежать ELFCLASS32 ошибки
+    PCSC_LIB=$(ls -d /nix/store/*-pcsclite-*-lib/lib/libpcsclite.so.1 | head -n 1)
+    export LD_PRELOAD="$PCSC_LIB"
     
-    export LD_PRELOAD="${pkgs.pcsclite}/lib/libpcsclite.so.1"
-    xfreerdp /v:"$RDP_SERVER" /u:"$U_NAME" /p:"$U_PASS" /smartcard /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off
+    ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" /smartcard /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off,default:visible,show:fullscreen
 
-    [ -n "$VPN_CONN" ] && nmcli connection down "$VPN_CONN" || true
-  '' ;
+    # 4. Очистка
+    ${pkgs.networkmanager}/bin/nmcli connection down Server || true
+  '';
 
 in {
   services.strongswan.enable = true;
   networking.networkmanager.plugins = [ pkgs.networkmanager-l2tp ];
+
   systemd.tmpfiles.rules = [ "d /etc/ipsec.d 0700 root root -" ]; 
-  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.zenity pkgs.pcsclite pkgs.wireguard-tools pkgs.cifs-utils ];
+  environment.etc."strongswan.conf".text = "charon { }";
+
+  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.libnotify pkgs.zenity pkgs.pcsclite ];
 
   networking.networkmanager.ensureProfiles.profiles = {
     "Server" = {
-      connection = { id = "Server"; type = "vpn"; autoconnect = "false"; };
+      connection = { id = "Server"; type = "vpn"; autoconnect = "false"; permissions = ""; };
       vpn = {
         service-type = "org.freedesktop.NetworkManager.l2tp";
         gateway = ""; user = ""; "user-auth-type" = "password"; "password-flags" = "2";
