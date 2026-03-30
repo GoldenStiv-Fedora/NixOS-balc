@@ -44,8 +44,8 @@ let
         $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-enable" -n -t bool -s true 2>/dev/null || 
         $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-enable" -s true
         
-        $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -n -t int -s 5 2>/dev/null || 
-        $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -s 5
+        $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -n -t int -s 3 2>/dev/null || 
+        $XFCONF -c xfce4-desktop -p "$PREFIX/image-style" -s 3
         
         # Период смены: 5 = Startup (при входе/запуске)
         $XFCONF -c xfce4-desktop -p "$PREFIX/backdrop-cycle-period" -n -t int -s 5 2>/dev/null || 
