@@ -7,6 +7,7 @@
     ./rutoken.nix
     ./vpn.nix
     ./git-sync.nix
+    ./printers.nix
   ];
 
   # Загрузчик UEFI с ограничением до 4-х сборок и максимально тихой загрузкой
