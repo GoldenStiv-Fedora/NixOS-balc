@@ -2,7 +2,7 @@
   description = "Конфигурация парка из 15 ПК на NixOS с поддержкой Рутокена и RDP";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11"; # Версия текущей OS
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
