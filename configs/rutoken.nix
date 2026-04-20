@@ -1,7 +1,7 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, ... }:
 
 let
-  # Официальный драйвер для Rutoken S (HID)
+  # Официальный драйвер для Rutoken (зафиксированный)
   ifd-rutokens = pkgs.stdenv.mkDerivation rec {
     pname = "ifd-rutokens";
     version = "1.0.4";
@@ -23,20 +23,23 @@ let
       find . -name "librutokens.so" -exec cp -L {} $DEST/Linux/ \;
       
       chmod +w $DEST/Info.plist
-      # Фикс: используем относительный путь для NixOS и исправляем структуру
       sed -i "s|<string>.*librutokens.so</string>|<string>librutokens.so</string>|g" $DEST/Info.plist
     '';
   };
 
 in {
-  services.pcscd.enable = true;
-  services.pcscd.plugins = [ pkgs.ccid ifd-rutokens ];
+  services.pcscd = {
+    enable = true;
+    # Полностью убираем ccid из плагинов, оставляем только родной драйвер Rutoken
+    plugins = [ ifd-rutokens ];
+  };
+
+  # Полностью исключаем Rutoken из системного PC/SC
+  environment.variables.PCSCLITE_FILTER = "0x0a89";
 
   environment.systemPackages = with pkgs; [
     opensc
     pkcs11helper
-    ccid
-    ifd-rutokens
     pcsc-tools
     usbutils
   ];
@@ -44,7 +47,7 @@ in {
   security.polkit.enable = true;
 
   services.udev.extraRules = ''
-    SUBSYSTEM=="usb", ATTR{idVendor}=="0a89", ATTR{idProduct}=="0020", MODE="0664", GROUP="wheel", ENV{ID_SMARTCARD_READER}="1"
-    SUBSYSTEM=="usb", ATTR{idVendor}=="0a89", ATTR{idProduct}=="0025", MODE="0664", GROUP="wheel", ENV{ID_SMARTCARD_READER}="1"
+    # Правило для доступа к USB, чтобы FreeRDP мог пробросить его напрямую
+    SUBSYSTEM=="usb", ATTR{idVendor}=="0a89", MODE="0666", GROUP="wheel", ENV{ID_SMARTCARD_READER}="1"
   '';
 }

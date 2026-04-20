@@ -72,7 +72,7 @@ in {
     wantedBy = [ "timers.target" ];
     timerConfig = { 
       OnBootSec = "5min"; 
-      OnUnitActiveSec = "20min"; 
+      OnUnitActiveSec = "5h"; 
       Unit = "nixos-git-sync.service"; 
     };
   };

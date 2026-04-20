@@ -1,13 +1,32 @@
 { config, pkgs, ... }:
 
 let
-  # Скрипт подключения RDP через VPN
   connectScript = pkgs.writeShellScriptBin "connect-rdp" ''
     #!/bin/bash
     CONFIG_DIR="$HOME/.config"
     mkdir -p "$CONFIG_DIR"
 
-    # 1. Выбор типа подключения
+    # Функция диагностики ошибок
+    check_rdp_error() {
+      RET=$?
+      if [ $RET -ne 0 ]; then
+        MSG="Ошибка подключения (код $RET)."
+        
+        # Проверка ключа
+        if ! ${pkgs.pcsc-tools}/bin/pcsc_scan -n -t 1 | grep -q "Card inserted"; then
+          MSG="КЛЮЧ НЕ НАЙДЕН. Вставьте Рутокен в порт."
+        elif ! ping -c 1 "$RDP_SERVER" &>/dev/null; then
+          MSG="СЕТЬ НЕДОСТУПНА. Проверьте соединение с VPN или сервером."
+        elif [ $RET -eq 20 ]; then
+          MSG="ОШИБКА ДРАЙВЕРА: Система не может пробросить устройство USB."
+        elif [ $RET -eq 130 ]; then
+          MSG="ОШИБКА АВТОРИЗАЦИИ: Проверьте пароль или правильность имени пользователя."
+        fi
+
+        ${pkgs.zenity}/bin/zenity --error --title="Ошибка RDP" --text="$MSG"
+      fi
+    }
+
     CHOICE=$(${pkgs.zenity}/bin/zenity --list --title="Выбор подключения" \
       --text="Выберите режим работы:" \
       --radiolist --column="Выбор" --column="Тип" \
@@ -16,15 +35,8 @@ let
 
     [ -z "$CHOICE" ] && exit 0
 
-    # Общие настройки для обоих режимов (Рутокен + Качество)
-    PCSC_LIB=$(ls -d /nix/store/*-pcsclite-*-lib/lib/libpcsclite.so.1 | head -n 1)
-    export LD_PRELOAD="$PCSC_LIB"
-    RDP_PARAMS="/smartcard /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off,default:visible,show:fullscreen"
-
     if [ "$CHOICE" == "L2TP (Удаленный доступ)" ]; then
         CONFIG_FILE="$CONFIG_DIR/rdp-connect.conf"
-        
-        # Загрузка или настройка L2TP
         if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
           VPN_GATEWAY=$(${pkgs.zenity}/bin/zenity --entry --title="Настройка VPN" --text="Введите ВНЕШНИЙ IP-адрес (VPN шлюз):")
           [ -z "$VPN_GATEWAY" ] && exit 1
@@ -40,7 +52,6 @@ let
           source "$CONFIG_FILE"
         fi
 
-        # Проверка активного VPN
         VPN_ACTIVE=$(${pkgs.networkmanager}/bin/nmcli connection show --active | grep -w "Server" || true)
 
         if [ -z "$VPN_ACTIVE" ]; then
@@ -70,15 +81,11 @@ let
           USER_PASS=$(echo "$USER_DATA" | cut -d'|' -f2)
         fi
 
-        # Запуск RDP и последующее отключение VPN
-        ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" $RDP_PARAMS
+        ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off,default:visible,show:fullscreen +clipboard +smartcard /sec:nla
+        check_rdp_error
         ${pkgs.networkmanager}/bin/nmcli connection down Server || true
-
     else
-        # Режим "Офис (Локальная сеть)"
         CONFIG_FILE="$CONFIG_DIR/rdp-office.conf"
-        
-        # Загрузка или настройка Офиса
         if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
           RDP_SERVER=$(${pkgs.zenity}/bin/zenity --entry --title="Настройка Офис" --text="Введите IP-адрес сервера RDP в офисе:")
           [ -z "$RDP_SERVER" ] && exit 1
@@ -93,19 +100,17 @@ let
         USER_NAME=$(echo "$USER_DATA" | cut -d'|' -f1)
         USER_PASS=$(echo "$USER_DATA" | cut -d'|' -f2)
 
-        # Запуск RDP напрямую (VPN не нужен)
-        ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" $RDP_PARAMS
+        ${pkgs.freerdp}/bin/xfreerdp /v:"$RDP_SERVER" /u:"$USER_NAME" /p:"$USER_PASS" /f /cert:ignore +dynamic-resolution +video /network:auto /floatbar:sticky:off,default:visible,show:fullscreen +clipboard +smartcard /sec:nla
+        check_rdp_error
     fi
   '';
 
 in {
   services.strongswan.enable = true;
   networking.networkmanager.plugins = [ pkgs.networkmanager-l2tp ];
-
   systemd.tmpfiles.rules = [ "d /etc/ipsec.d 0700 root root -" ]; 
   environment.etc."strongswan.conf".text = "charon { }";
-
-  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.libnotify pkgs.zenity pkgs.pcsclite ];
+  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.libnotify pkgs.zenity pkgs.pcsclite pkgs.pcsc-tools ];
 
   networking.networkmanager.ensureProfiles.profiles = {
     "Server" = {
