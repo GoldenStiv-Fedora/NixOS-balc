@@ -68,11 +68,11 @@ in {
   };
 
   systemd.timers.nixos-git-sync = {
-    description = "Таймер синхронизации (каждые 20 минут)";
+    description = "Таймер синхронизации (каждые 5 часов)";
     wantedBy = [ "timers.target" ];
     timerConfig = { 
       OnBootSec = "5min"; 
-      OnUnitActiveSec = "20min"; 
+      OnUnitActiveSec = "5h"; 
       Unit = "nixos-git-sync.service"; 
     };
   };
