@@ -9,7 +9,7 @@ on:
   workflow_dispatch: # Позволяет запускать вручную кнопкой
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  
   # Переменные для удобной настройки
   COMMIT_MSG: "система: автоматическое обновление flake.lock"
   GIT_USER_NAME: "github-actions[bot]"
