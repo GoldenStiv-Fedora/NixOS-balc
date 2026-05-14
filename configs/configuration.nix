@@ -79,6 +79,7 @@
     xfce.xfce4-xkb-plugin
     pavucontrol
     audio-recorder
+    ocs-url
   ];
 
   # ПРОЗРАЧНЫЕ АЛИАСЫ
