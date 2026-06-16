@@ -81,6 +81,11 @@
     patool
     ocs-url
   ];
+# Добавляем архиватор
+services.xserver.desktopManager.xfce.thunarPlugins = with pkgs; [
+  xfce.thunar-archive-plugin
+  xarchiver
+];
 
   # ПРОЗРАЧНЫЕ АЛИАСЫ
   environment.shellAliases = {
