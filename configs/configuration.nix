@@ -91,5 +91,5 @@
     obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && cd /etc/nixos && sudo nix flake update && soberi";
   };
 
-  system.stateVersion = "25.11"; 
+  system.stateVersion = "26.05"; 
 }
