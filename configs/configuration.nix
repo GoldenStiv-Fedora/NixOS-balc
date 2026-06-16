@@ -81,8 +81,8 @@
     ocs-url
   ];
 # Добавляем архиватор
-services.xserver.desktopManager.xfce.thunarPlugins = with pkgs; [
-  xfce.thunar-archive-plugin
+programs.thunar.plugins = with pkgs; [
+  thunar-archive-plugin
   xarchiver
 ];
 
