@@ -16,7 +16,7 @@
   services.printing.drivers = with pkgs; [
     # Драйверы для HP принтеров (HPLIP)
     hplip
-    hplipWithPlugin
+    
     # Драйверы для Brother принтеров (исправленные имена)
     brlaser
     brgenml1cupswrapper  # Правильное имя вместо brgenml1
