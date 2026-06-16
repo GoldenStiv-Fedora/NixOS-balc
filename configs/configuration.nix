@@ -68,6 +68,7 @@
 
   environment.systemPackages = with pkgs; [
     pkgs-unstable.gemini-cli
+    pkgs-unstable.opencode
     pkgs-unstable.brave
     #firefox
     git
