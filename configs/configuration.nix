@@ -75,8 +75,8 @@
     wget
     usbutils
     numlockx
-    xfce.xfce4-pulseaudio-plugin
-    xfce.xfce4-xkb-plugin
+    xfce4-pulseaudio-plugin 
+    xfce4-xkb-plugin 
     pavucontrol
     ocs-url
   ];
