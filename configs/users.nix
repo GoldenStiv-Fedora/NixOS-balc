@@ -5,7 +5,7 @@ let
   setup-xfce-wallpaper = pkgs.writeShellScriptBin "setup-xfce-wallpaper" ''
     # 1. Ждем загрузки рабочего стола (несколько попыток для надежности при первом входе)
     IMAGE_DIR="/usr/share/backgrounds/balc"
-    XFCONF="${pkgs.xfce.xfconf}/bin/xfconf-query"
+    XFCONF="${pkgs.xfconf}/bin/xfconf-query"
     
     # Проверка наличия картинок
     if [ ! -d "$IMAGE_DIR" ] || [ -z "$(ls -A "$IMAGE_DIR" 2>/dev/null)" ]; then
@@ -61,7 +61,7 @@ let
       sleep 10
       apply_settings
       # Принудительно обновляем рабочий стол
-      ${pkgs.xfce.xfdesktop}/bin/xfdesktop --reload 2>/dev/null || true
+      ${pkgs.xfdesktop}/bin/xfdesktop --reload 2>/dev/null || true
     done
   '';
 
