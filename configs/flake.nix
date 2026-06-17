@@ -9,8 +9,7 @@
   outputs = { self, nixpkgs, nixpkgs-unstable, ... }@inputs: {
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
-      specialArgs = { 
-        inherit inputs; 
+      specialArgs = {
         pkgs-unstable = import nixpkgs-unstable {
           system = "x86_64-linux";
           config.allowUnfree = true;

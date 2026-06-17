@@ -38,6 +38,11 @@
   };
   nix.settings.auto-optimise-store = true;
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.substituters = [
+    "https://nixos.snix.store"
+    "https://nixos-cache-proxy.cofob.dev"
+    "https://cache.nixos.org"
+  ];
 
   networking.hostName = "nixos";
   networking.networkmanager.enable = true;
@@ -46,7 +51,6 @@
   i18n.defaultLocale = "ru_RU.UTF-8";
 
   services.xserver.enable = true;
-  services.xserver.displayManager.setupCommands = "${pkgs.numlockx}/bin/numlockx on";
   services.xserver.displayManager.lightdm.enable = true;
   services.xserver.displayManager.lightdm.greeters.gtk.extraConfig = "activate-numlock=true";
   services.xserver.displayManager.sessionCommands = "${pkgs.numlockx}/bin/numlockx on";
@@ -80,7 +84,6 @@
     xfce4-pulseaudio-plugin 
     xfce4-xkb-plugin 
     pavucontrol
-    ocs-url
   ];
 # Добавляем архиватор
 programs.thunar.plugins = with pkgs; [
@@ -94,7 +97,7 @@ programs.thunar.plugins = with pkgs; [
     soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
     
     # Обновить из Git + Обновить каналы + Собрать (Защита: исключаем hardware-configuration.nix)
-    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && cd /etc/nixos && sudo nix flake update && soberi";
+    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && cd /etc/nixos && sudo nix flake lock --update-input nixpkgs && soberi";
   };
 
   system.stateVersion = "26.05"; 

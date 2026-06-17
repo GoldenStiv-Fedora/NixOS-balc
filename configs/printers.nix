@@ -113,7 +113,7 @@
     wantedBy = [ "timers.target" ];
     timerConfig = {
       OnBootSec = "30sec";
-      OnUnitActiveSec = "4h";
+      OnUnitActiveSec = "24h";
       Unit = "auto-discover-printers.service";
     };
   };

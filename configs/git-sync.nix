@@ -46,9 +46,15 @@ let
       # Копируем конфиги в основную папку (Защита: исключаем hardware-configuration.nix)
       ${pkgs.rsync}/bin/rsync -a $SYNC_DIR/configs/ $DEST_DIR/ --exclude=hardware-configuration.nix
 
-      echo "Финальная сборка системы..."
-      /run/current-system/sw/bin/nixos-rebuild switch --flake /etc/nixos#nixos
-      echo "Обновление системы завершено!"
+      echo "Проверка сборки..."
+      if /run/current-system/sw/bin/nixos-rebuild build --flake /etc/nixos#nixos; then
+        echo "Сборка успешна! Применяю..."
+        /run/current-system/sw/bin/nixos-rebuild switch --flake /etc/nixos#nixos
+        echo "Обновление системы завершено!"
+      else
+        echo "ОШИБКА СБОРКИ! Система не обновлена."
+        sudo -u balc DISPLAY=:0 ${pkgs.zenity}/bin/zenity --error --title="Ошибка обновления" --text="Сборка конфигурации NixOS провалилась. Конфиги скопированы, но система не обновлена." 2>/dev/null || true
+      fi
     else
       echo "Конфигурация системы уже актуальна. Картинки синхронизированы."
     fi
