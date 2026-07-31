@@ -1,21 +1,17 @@
 name: "Автоматическое обновление пакетов NixOS"
 
-# Настройка расписания (Cron)
 on:
   schedule:
-    # '0 3 */3 * *' означает: запуск в 03:00 каждые 3 дня.
-    # Чтобы изменить частоту, редактируйте строку ниже:
     - cron: '0 2 */1 * *'
-  workflow_dispatch: # Позволяет запускать вручную кнопкой
+  workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Переменные для удобной настройки
   COMMIT_MSG: "система: автоматическое обновление flake.lock"
   GIT_USER_NAME: "github-actions[bot]"
   GIT_USER_EMAIL: "github-actions[bot]@users.noreply.github.com"
-  # Список файлов-заглушек (через пробел)
-  STUB_FILES: "hardware-configuration.nix users.nix rutoken.nix"
+
+  FLAKE_DIR: "configs"
+  STUB_FILES: "hardware-configuration.nix"
 
 jobs:
   update-flake:
@@ -25,25 +21,15 @@ jobs:
       contents: write
     steps:
       - name: "Клонирование репозитория"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: "Установка Nix"
-        uses: DeterminateSystems/nix-installer-action@v12
+        uses: DeterminateSystems/nix-installer-action@v13
 
-      - name: "Обновление зависимостей (flake update)"
+      - name: "Подготовка среды и обновление"
         run: |
-          # 1. Поиск директории с конфигурацией
-          FLAKE_FILE=$(find . -name "flake.nix" | head -n 1)
-          if [ -z "$FLAKE_FILE" ]; then
-            echo "Ошибка: файл flake.nix не найден"
-            exit 1
-          fi
-          FLAKE_DIR=$(dirname "$FLAKE_FILE")
-          echo "Файл найден в: $FLAKE_DIR"
-          
-          cd "$FLAKE_DIR"
+          cd "${{ env.FLAKE_DIR }}"
 
-          # 2. Создание временных заглушек из переменной STUB_FILES
           for file in ${{ env.STUB_FILES }}; do
             if [ ! -f "$file" ]; then
               echo "{ ... }: { }" > "$file"
@@ -51,12 +37,15 @@ jobs:
             fi
           done
 
-          # 3. Обновление пакетов
+          if [ -d "../apps" ]; then
+            ln -s ../apps apps
+            echo "Временная ссылка на ../apps создана"
+          fi
+
           nix flake update --extra-experimental-features "nix-command flakes"
 
-          # 4. Удаление временных заглушек
+          rm -f apps
           for file in ${{ env.STUB_FILES }}; do
-            # Удаляем файл только если он не в списке git (на всякий случай)
             rm -f "$file"
           done
 
@@ -64,9 +53,12 @@ jobs:
         run: |
           git config user.name "${{ env.GIT_USER_NAME }}"
           git config user.email "${{ env.GIT_USER_EMAIL }}"
-          
-          # Находим и добавляем именно тот файл, который обновился
-          find . -name "flake.lock" -exec git add {} +
-          
-          git commit -m "${{ env.COMMIT_MSG }}" || echo "Нет изменений для коммита"
-          git push
+
+          git add "${{ env.FLAKE_DIR }}/flake.lock"
+
+          if ! git diff --staged --quiet; then
+            git commit -m "${{ env.COMMIT_MSG }}"
+            git push
+          else
+            echo "Изменений нет — flake.lock актуален"
+          fi
