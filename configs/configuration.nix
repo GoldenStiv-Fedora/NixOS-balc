@@ -96,7 +96,7 @@ programs.thunar.plugins = with pkgs; [
     soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
     
     # Обновить из Git + Обновить каналы + Собрать (Защита: исключаем hardware-configuration.nix)
-    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && cd /etc/nixos && sudo nix flake lock --update-input nixpkgs && soberi";
+    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && sudo sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf && cd /etc/nixos && sudo nix flake lock --update-input nixpkgs && soberi";
   };
 
   system.stateVersion = "26.05"; 
