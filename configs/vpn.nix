@@ -110,7 +110,13 @@ in {
   networking.networkmanager.plugins = [ pkgs.networkmanager-l2tp ];
   systemd.tmpfiles.rules = [ "d /etc/ipsec.d 0700 root root -" ]; 
   environment.etc."strongswan.conf".text = "charon { }";
-  environment.systemPackages = [ connectScript pkgs.freerdp pkgs.libnotify pkgs.zenity pkgs.pcsclite pkgs.pcsc-tools ];
+  environment.systemPackages = [ 
+    connectScript 
+    pkgs.freerdp 
+    pkgs.libnotify 
+    pkgs.zenity 
+    pkgs.pcsclite 
+    pkgs.pcsc-tools ];
 
   networking.networkmanager.ensureProfiles.profiles = {
     "Server" = {
