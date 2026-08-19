@@ -50,9 +50,9 @@ let
       ${pkgs.gnused}/bin/sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf
 
       echo "Проверка сборки..."
-      if /run/current-system/sw/bin/nixos-rebuild build --flake /etc/nixos#nixos; then
+      if /run/current-system/sw/bin/nixos-rebuild build --option substituters 'https://cache.nixos.org https://nixos-cache-proxy.cofob.dev' --flake /etc/nixos#nixos; then
         echo "Сборка успешна! Применяю..."
-        /run/current-system/sw/bin/nixos-rebuild switch --flake /etc/nixos#nixos
+        /run/current-system/sw/bin/nixos-rebuild switch --option substituters 'https://cache.nixos.org https://nixos-cache-proxy.cofob.dev' --flake /etc/nixos#nixos
         echo "Обновление системы завершено!"
       else
         echo "ОШИБКА СБОРКИ! Система не обновлена."

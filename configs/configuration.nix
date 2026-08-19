@@ -92,11 +92,11 @@ programs.thunar.plugins = with pkgs; [
 
   # ПРОЗРАЧНЫЕ АЛИАСЫ
   environment.shellAliases = {
-    # Собрать текущую систему
-    soberi = "sudo nixos-rebuild switch --flake /etc/nixos#nixos";
-    
+    # Собрать текущую систему (--option перезаписывает kривой nix.conf)
+    soberi = "sudo nixos-rebuild switch --option substituters 'https://cache.nixos.org https://nixos-cache-proxy.cofob.dev' --flake /etc/nixos#nixos";
+
     # Обновить из Git + Обновить каналы + Собрать (Защита: исключаем hardware-configuration.nix)
-    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && sudo sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf && cd /etc/nixos && sudo nix flake lock --update-input nixpkgs && soberi";
+    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && sudo sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf && cd /etc/nixos && sudo nix flake lock --option substituters 'https://cache.nixos.org https://nixos-cache-proxy.cofob.dev' --update-input nixpkgs && soberi";
   };
 
   system.stateVersion = "26.05"; 
