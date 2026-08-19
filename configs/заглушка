@@ -1,0 +1,1 @@
+sudo sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf && obnovi
