@@ -72,7 +72,7 @@
   environment.systemPackages = with pkgs; [
     #pkgs-unstable.gemini-cli
     #pkgs-unstable.opencode
-    remmina
+    #remmina
     pkgs-unstable.opencode-desktop
     pkgs-unstable.brave
     #firefox
