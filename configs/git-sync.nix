@@ -46,6 +46,9 @@ let
       # Копируем конфиги в основную папку (Защита: исключаем hardware-configuration.nix)
       ${pkgs.rsync}/bin/rsync -a $SYNC_DIR/configs/ $DEST_DIR/ --exclude=hardware-configuration.nix
 
+      # Чистим мёртвые substituters из nix.conf чтобы rebuild не вис
+      ${pkgs.gnused}/bin/sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf
+
       echo "Проверка сборки..."
       if /run/current-system/sw/bin/nixos-rebuild build --flake /etc/nixos#nixos; then
         echo "Сборка успешна! Применяю..."
