@@ -39,7 +39,6 @@
   nix.settings.auto-optimise-store = true;
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nix.settings.substituters = [
-    #"https://nixos.snix.store"
     "https://nixos-cache-proxy.cofob.dev"
     "https://cache.nixos.org"
   ];
