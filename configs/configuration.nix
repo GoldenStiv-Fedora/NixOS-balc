@@ -74,8 +74,8 @@
     #pkgs-unstable.opencode
     #remmina
     pkgs-unstable.opencode-desktop
-    pkgs-unstable.brave
-    #firefox
+    #pkgs-unstable.brave
+    firefox
     git
     vim
     wget
