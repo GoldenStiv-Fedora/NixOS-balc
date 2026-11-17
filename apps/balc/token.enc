@@ -1,0 +1,12 @@
+{
+  "magic": "balc-token-vault",
+  "version": 1,
+  "kdf": "scrypt",
+  "n": 65536,
+  "r": 8,
+  "p": 1,
+  "salt": "e6AdKakESfGNwOao3FNlMQ==",
+  "nonce": "RxqLBXJ+lUfR6BoeVkvprQ==",
+  "ciphertext": "+Q6yyG+ZYDWsBp9HvzyPgL2Fyp+gH/76GGxFag0JWHW7tTYSQeklgvME8VSDH8mnPv1k248BvVcns9bnKRcdI/KmA6qfjMmWgv5F4VVVImmeNnIoXpyjY64Gs09E8QTLeVRl0NqqCg5SogB/3vYDE3BFq1W+3w==",
+  "tag": "FfWyga1u4Gwr58iTNXXGURxKSPvkFOkuqZoU4R9LKH0="
+}
