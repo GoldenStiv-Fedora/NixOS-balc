@@ -29,6 +29,13 @@ let
       EOF
       chmod +x $out/bin/balc
 
+      # Создание зашифрованного токена: balc-token-setup ПУТЬ/token.enc
+      cat > $out/bin/balc-token-setup <<EOF
+      #!${pkgs.runtimeShell}
+      exec ${pythonEnv}/bin/python $out/share/balc/token_tool.py "\$@"
+      EOF
+      chmod +x $out/bin/balc-token-setup
+
       mkdir -p $out/share/applications
       cat > $out/share/applications/balc.desktop <<EOF
       [Desktop Entry]

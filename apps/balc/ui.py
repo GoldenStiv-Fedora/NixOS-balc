@@ -1,6 +1,7 @@
 """Графический интерфейс приложения balc."""
 
 import ipaddress
+import os
 import queue
 import shutil
 import subprocess
@@ -71,6 +72,10 @@ class BalcApp:
         fleet_menu.add_command(label="Обновить", command=self.refresh_async)
         fleet_menu.add_command(label="Найти ПК", command=self.discover_async)
         fleet_menu.add_command(label="Подсети…", command=self.edit_subnets)
+        fleet_menu.add_separator()
+        fleet_menu.add_command(label="Мастер-пароль…", command=self.unlock_token)
+        fleet_menu.add_command(label="Забыть токен", command=self.forget_token)
+        fleet_menu.add_command(label="Токен GitHub (простой)…", command=self.edit_token)
         fleet_menu.add_separator()
         fleet_menu.add_command(label="Выход", command=self.on_close)
         menubar.add_cascade(label="Парк", menu=fleet_menu)
@@ -596,6 +601,8 @@ class BalcApp:
         new_name = new_name.strip()
         if not new_name:
             return
+        if not self.ensure_token():
+            return
         self._rename_running = True
         self._update_busy()
         self.status_var.set("Сохранение имени...")
@@ -628,6 +635,8 @@ class BalcApp:
             except ValueError:
                 messagebox.showerror("Подсети", f"Некорректная подсеть: {subnet}")
                 return
+        if not self.ensure_token():
+            return
         self._settings_running = True
         self._update_busy()
         self.status_var.set("Сохранение подсетей...")
@@ -640,6 +649,93 @@ class BalcApp:
     def _settings_worker(self, subnets) -> None:
         ok, message = self.inventory.set_scan_subnets(subnets)
         self._queue.put(("settings_done", (ok, message)))
+
+    def ensure_token(self) -> bool:
+        """Гарантировать токен перед записью в GitHub."""
+        if self.inventory.has_token():
+            return True
+        if self.inventory.vault_available():
+            return self.unlock_token()
+        messagebox.showinfo(
+            "Токен GitHub",
+            "Токен не задан.\n\n"
+            "Положите token.enc в папку приложения или задайте токен "
+            "через «Парк → Токен GitHub (простой)…».",
+        )
+        return False
+
+    def unlock_token(self) -> bool:
+        if not self.inventory.vault_available():
+            messagebox.showinfo(
+                "Мастер-пароль",
+                "Файл token.enc не найден.\n\n"
+                "Создайте его командой:\n"
+                "python3 apps/balc/token_tool.py apps/balc/token.enc",
+            )
+            return False
+        password = simpledialog.askstring(
+            "Мастер-пароль",
+            "Введите мастер-пароль для token.enc:",
+            show="*",
+            parent=self.root,
+        )
+        if password is None:
+            return False
+        ok, message = self.inventory.unlock(password)
+        if ok:
+            self.log_line("Токен GitHub расшифрован.")
+            return True
+        messagebox.showerror("Мастер-пароль", message)
+        return False
+
+    def forget_token(self) -> None:
+        self.inventory.forget_token()
+        self.log_line("Токен GitHub забыт до перезапуска.")
+
+    def edit_token(self) -> None:
+        try:
+            has_token = (
+                config.GITHUB_TOKEN_FILE.is_file()
+                and config.GITHUB_TOKEN_FILE.stat().st_size > 0
+            )
+        except OSError:
+            has_token = False
+        state = "задан" if has_token else "не задан"
+        token = simpledialog.askstring(
+            "Токен GitHub",
+            f"Токен сейчас {state}.\n"
+            "Вставьте новый токен (пусто — удалить):",
+            show="*",
+            parent=self.root,
+        )
+        if token is None:
+            return
+        token = token.strip()
+        try:
+            if token:
+                config.GITHUB_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(
+                    config.GITHUB_TOKEN_FILE,
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(token + "\n")
+                os.chmod(config.GITHUB_TOKEN_FILE, 0o600)
+                self.log_line("Токен GitHub сохранён локально.")
+                messagebox.showinfo(
+                    "Токен GitHub",
+                    "Токен сохранён в ~/.config/balc/github_token.",
+                )
+            else:
+                config.GITHUB_TOKEN_FILE.unlink(missing_ok=True)
+                self.log_line("Токен GitHub удалён.")
+                messagebox.showinfo("Токен GitHub", "Токен удалён.")
+        except OSError as exc:
+            messagebox.showerror(
+                "Токен GitHub",
+                f"Не удалось сохранить токен: {exc}",
+            )
 
     def open_ssh(self) -> None:
         mac = self.selected_mac()

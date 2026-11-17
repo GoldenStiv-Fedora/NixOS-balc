@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import vault
 from config import (
     GITHUB_TOKEN_FILE,
     INVENTORY_API_URL,
@@ -41,12 +42,69 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+def parse_time(value: Any) -> datetime:
+    """Разобрать ISO-время; некорректное значение считается самым старым."""
+    if not isinstance(value, str) or not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def normalized_pcs(source: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    result: Dict[str, Dict[str, Any]] = {}
+    for mac, record in (source.get("pcs") or {}).items():
+        if isinstance(record, dict):
+            result[str(mac).upper()] = record
+    return result
+
+
+def merge_records(*records: Dict[str, Any]) -> Dict[str, Any]:
+    """Слить записи об одном ПК, не теряя изменений с других машин.
+
+    Имя берётся из записи с самым свежим updated_at, IP — с самым свежим
+    last_seen. Остальные поля объединяются, побеждает более поздняя запись.
+    """
+    items = [record for record in records if isinstance(record, dict)]
+    if not items:
+        return {}
+
+    merged: Dict[str, Any] = {}
+    for item in items:
+        merged.update(item)
+
+    named = [item for item in items if str(item.get("name") or "").strip()]
+    if named:
+        merged["name"] = max(
+            enumerate(named),
+            key=lambda pair: (parse_time(pair[1].get("updated_at")), pair[0]),
+        )[1]["name"]
+
+    addressed = [item for item in items if str(item.get("ip") or "").strip()]
+    if addressed:
+        merged["ip"] = max(
+            enumerate(addressed),
+            key=lambda pair: (parse_time(pair[1].get("last_seen")), pair[0]),
+        )[1]["ip"]
+
+    for key in ("last_seen", "updated_at"):
+        values = [item.get(key) for item in items if item.get(key)]
+        if values:
+            merged[key] = max(values, key=parse_time)
+    return merged
+
+
 class Inventory:
     def __init__(self):
         self.pcs: Dict[str, Dict[str, Any]] = {}
         self.scan_subnets: List[str] = []
         self.source = "пусто"
         self.last_error = ""
+        self.session_token = ""
         self._remote_loaded_at = 0.0
         self._load_sources({})
 
@@ -63,29 +121,42 @@ class Inventory:
             self.last_error = f"GitHub: {exc}"
             return {}
 
+    def _fetch_remote_api(self, token: str) -> Tuple[Dict[str, Any], str]:
+        """Прочитать inventory.json через API вместе с текущим sha."""
+        request = urllib.request.Request(
+            INVENTORY_API_URL,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "balc/0.1",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                current = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return {}, ""
+            raise
+
+        sha = str(current.get("sha") or "")
+        content = current.get("content") or ""
+        if not content:
+            return {}, sha
+        try:
+            decoded = base64.b64decode(content).decode("utf-8")
+            data = json.loads(decoded)
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            return {}, sha
+        return (data if isinstance(data, dict) else {}), sha
+
     def _load_sources(self, remote: Dict[str, Any]) -> None:
         system = read_json(SYSTEM_INVENTORY)
         local = read_json(LOCAL_INVENTORY)
         merged: Dict[str, Dict[str, Any]] = {}
         for source in (system, remote, local):
-            for mac, record in (source.get("pcs") or {}).items():
-                if not isinstance(record, dict):
-                    continue
-                key = str(mac).upper()
-                previous = merged.get(key, {})
-                combined = dict(previous)
-                combined.update(record)
-                candidates = [
-                    item
-                    for item in (previous, record)
-                    if str(item.get("name") or "").strip()
-                ]
-                if candidates:
-                    combined["name"] = max(
-                        candidates,
-                        key=lambda item: str(item.get("updated_at") or ""),
-                    ).get("name", "")
-                merged[key] = combined
+            for mac, record in normalized_pcs(source).items():
+                merged[mac] = merge_records(merged.get(mac, {}), record)
 
         self.pcs = merged
         subnets: List[str] = []
@@ -103,6 +174,25 @@ class Inventory:
             self.source = "система"
         else:
             self.source = "пусто"
+
+    def _merge_data(self, remote: Dict[str, Any]) -> Dict[str, Any]:
+        """Слить текущее состояние с GitHub и локальными изменениями."""
+        merged_pcs = normalized_pcs(remote)
+        for mac, record in self.pcs.items():
+            key = str(mac).upper()
+            merged_pcs[key] = merge_records(merged_pcs.get(key, {}), record)
+
+        subnets: List[str] = []
+        for source in (remote, {"scan_subnets": self.scan_subnets}):
+            for subnet in source.get("scan_subnets") or []:
+                if isinstance(subnet, str) and subnet not in subnets:
+                    subnets.append(subnet)
+
+        return {
+            "pcs": merged_pcs,
+            "scan_subnets": subnets,
+            "updated_at": utc_now(),
+        }
 
     def reload(self, force: bool = False) -> None:
         now = time.time()
@@ -167,10 +257,34 @@ class Inventory:
     def _save_local(self) -> None:
         write_json(LOCAL_INVENTORY, self._local_data())
 
+    def vault_available(self) -> bool:
+        """Есть ли зашифрованный файл токена."""
+        return vault.vault_exists()
+
+    def has_token(self) -> bool:
+        return bool(self._token())
+
+    def unlock(self, password: str) -> Tuple[bool, str]:
+        """Расшифровать token.enc и держать токен в памяти до выхода."""
+        path = vault.vault_path()
+        try:
+            token = vault.decrypt_token(password, path)
+        except vault.VaultError as exc:
+            return False, str(exc)
+        self.session_token = token
+        return True, "токен расшифрован"
+
+    def forget_token(self) -> None:
+        self.session_token = ""
+
     def _token(self) -> str:
+        # Приоритет: переменная окружения, расшифрованный токен, старый
+        # открытый файл (на случай, если владелец ещё не перешёл на token.enc).
         token = os.environ.get("BALC_GITHUB_TOKEN", "").strip()
         if token:
             return token
+        if self.session_token:
+            return self.session_token
         try:
             return GITHUB_TOKEN_FILE.read_text(encoding="utf-8").strip()
         except OSError:
@@ -179,35 +293,33 @@ class Inventory:
     def push(self) -> Tuple[bool, str]:
         token = self._token()
         if not token:
+            if self.vault_available():
+                return False, "токен заблокирован; введите мастер-пароль"
             return False, "токен GitHub не задан; имена сохранены локально"
 
-        content = json.dumps(
-            self._local_data(),
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        ) + "\n"
-        encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-
-        for _ in range(2):
-            sha = None
-            request = urllib.request.Request(
-                INVENTORY_API_URL,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "balc/0.1",
-                },
-            )
+        last_error = ""
+        for _ in range(3):
             try:
-                with urllib.request.urlopen(request, timeout=10) as response:
-                    current = json.loads(response.read().decode("utf-8"))
-                    sha = current.get("sha")
+                remote, sha = self._fetch_remote_api(token)
             except urllib.error.HTTPError as exc:
-                if exc.code != 404:
-                    return False, f"GitHub API: {exc.code}"
+                return False, f"GitHub API: {exc.code}"
             except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
                 return False, f"GitHub API: {exc}"
+
+            # Перед записью обязательно перечитываем GitHub и сливаем данные:
+            # иначе ПК с устаревшей копией затрёт имена, сохранённые другими.
+            merged = self._merge_data(remote)
+            self.pcs = merged["pcs"]
+            self.scan_subnets = merged["scan_subnets"]
+            self._save_local()
+
+            content = json.dumps(
+                merged,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ) + "\n"
+            encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
 
             payload = {
                 "message": "balc: обновление инвентаря",
@@ -233,9 +345,10 @@ class Inventory:
                     response.read()
                 return True, "инвентарь отправлен в GitHub"
             except urllib.error.HTTPError as exc:
-                if exc.code == 409:
+                if exc.code in (409, 422):
+                    last_error = str(exc.code)
                     continue
                 return False, f"GitHub API: {exc.code}"
             except (urllib.error.URLError, OSError) as exc:
                 return False, f"GitHub API: {exc}"
-        return False, "GitHub API: конфликт версий, повторите позже"
+        return False, f"GitHub API: конфликт версий ({last_error}), повторите позже"
