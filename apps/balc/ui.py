@@ -47,6 +47,7 @@ class BalcApp:
         self._rename_running = False
         self._settings_running = False
         self._closing = False
+        self._auto_ticks = 0
         self._sort_col = "name"
         self._sort_reverse = False
 
@@ -219,7 +220,9 @@ class BalcApp:
         ttk.Label(bottom, textvariable=self.source_var).pack(side="right")
 
     def _initial_refresh(self) -> None:
-        self.refresh_async(discover=not bool(self.inventory.all()))
+        # Всегда сканируем сеть при запуске: находим и новые ПК, а не только
+        # уже известные из инвентаря.
+        self.refresh_async(discover=True)
 
     def _poll_queue(self) -> None:
         if self._closing:
@@ -276,7 +279,10 @@ class BalcApp:
             and not self._rename_running
             and not self._settings_running
         ):
-            self.refresh_async()
+            # Раз в ~10 минут дополнительно сканируем сеть: находим новые ПК,
+            # которые включились позже (Wi-Fi-сон, перезагрузки).
+            self._auto_ticks += 1
+            self.refresh_async(discover=(self._auto_ticks % 10 == 0))
         self.root.after(config.REFRESH_SECONDS * 1000, self._auto_refresh)
 
     def _update_busy(self) -> None:
