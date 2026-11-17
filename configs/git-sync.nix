@@ -48,6 +48,7 @@ let
     MV="${pkgs.coreutils}/bin/mv"
     CP="${pkgs.coreutils}/bin/cp"
     GREP="${pkgs.gnugrep}/bin/grep"
+    NOM="${pkgs.nix-output-monitor}/bin/nom"
     IP="${pkgs.iproute2}/bin/ip"
     NIXOS_REBUILD="/run/current-system/sw/bin/nixos-rebuild"
     NIXOS_VERSION="/run/current-system/sw/bin/nixos-version"
@@ -93,6 +94,16 @@ let
         '{updated_at:$updated_at,last_check_at:$last_check_at,last_attempt_at:$last_attempt_at,last_attempt_commit:$last_attempt_commit,last_success_at:$last_success_at,last_success_commit:$last_success_commit,last_synced_commit:$last_synced_commit,last_result:$last_result,last_error:$last_error,remote_commit:$remote_commit,hostname:$hostname,mac:$mac,generation:$generation,configuration_revision:$configuration_revision}' \
         > "$STATUS_FILE.tmp" && $MV "$STATUS_FILE.tmp" "$STATUS_FILE"
       $CHMOD 644 "$STATUS_FILE" 2>/dev/null || true
+    }
+
+    # Красивый прогресс сборки через nom, если вывод идёт в терминал.
+    # В службе вывода нет TTY, поэтому там вывод остаётся обычным (в логах).
+    run_build_pretty() {
+      if [ -t 1 ]; then
+        "$@" 2>&1 | $NOM
+      else
+        "$@"
+      fi
     }
 
     sync_images() {
@@ -305,7 +316,7 @@ let
       echo "Предварительная сборка (nixos-rebuild build)..."
       cd "$STATE_DIR" || exit 1
       $RM -f result
-      if ! $NIXOS_REBUILD build --option substituters https://cache.nixos.org --flake "$DEST_DIR#nixos" > "$BUILD_LOG" 2>&1; then
+      if ! run_build_pretty $NIXOS_REBUILD build --option substituters https://cache.nixos.org --flake "$DEST_DIR#nixos" > "$BUILD_LOG" 2>&1; then
         echo "ОШИБКА ПРЕДВАРИТЕЛЬНОЙ СБОРКИ. Система не изменена."
         $TAIL -n 80 "$BUILD_LOG" || true
         ERROR_TEXT=$($TAIL -n 40 "$BUILD_LOG" 2>/dev/null | $TR '\n' ' ' | $CUT -c1-2000)

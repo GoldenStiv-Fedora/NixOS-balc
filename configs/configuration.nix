@@ -92,6 +92,7 @@
     wget
     usbutils
     numlockx
+    nix-output-monitor
     xfce4-pulseaudio-plugin 
     xfce4-xkb-plugin 
     pavucontrol
@@ -106,7 +107,8 @@ programs.thunar.plugins = with pkgs; [
   # ПРОЗРАЧНЫЕ АЛИАСЫ
   environment.shellAliases = {
     # Собрать текущую систему. Используем только официальный кэш.
-    soberi = "sudo nixos-rebuild switch --option substituters 'https://cache.nixos.org' --flake /etc/nixos#nixos";
+    # Вывод сборки — через nom (nix-output-monitor), красивое дерево зависимостей.
+    soberi = "sudo nixos-rebuild switch --option substituters 'https://cache.nixos.org' --flake /etc/nixos#nixos |& ${pkgs.nix-output-monitor}/bin/nom";
 
     # Обновить из Git и пересобрать через ту же службу, что и таймер.
     # lock-файл не трогаем: он обновляется на GitHub.
