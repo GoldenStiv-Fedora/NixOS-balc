@@ -222,17 +222,19 @@ class Inventory:
             self._save_local()
 
     def set_name(self, mac: str, name: str) -> Tuple[bool, str]:
+        """Сохранить имя локально. Отправка в GitHub — отдельным push()."""
         key = mac.upper()
         record = self.pcs.setdefault(key, {})
         record["name"] = name.strip()
         record["updated_at"] = utc_now()
         self._save_local()
-        return self.push()
+        return True, "имя сохранено локально"
 
     def set_scan_subnets(self, subnets: List[str]) -> Tuple[bool, str]:
+        """Сохранить подсети локально. Отправка в GitHub — отдельным push()."""
         self.scan_subnets = [subnet.strip() for subnet in subnets if subnet.strip()]
         self._save_local()
-        return self.push()
+        return True, "подсети сохранены локально"
 
     def add_discovered(self, mac: str, ip: str) -> None:
         key = mac.upper()
@@ -343,6 +345,7 @@ class Inventory:
             try:
                 with urllib.request.urlopen(request, timeout=15) as response:
                     response.read()
+                self.source = "GitHub"
                 return True, "инвентарь отправлен в GitHub"
             except urllib.error.HTTPError as exc:
                 if exc.code in (409, 422):

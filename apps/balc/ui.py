@@ -70,7 +70,7 @@ class BalcApp:
 
         menubar = tk.Menu(self.root)
         fleet_menu = tk.Menu(menubar, tearoff=0)
-        fleet_menu.add_command(label="Обновить", command=self.refresh_async)
+        fleet_menu.add_command(label="Обновить", command=self.refresh_all)
         fleet_menu.add_command(label="Найти ПК", command=self.discover_async)
         fleet_menu.add_command(label="Подсети…", command=self.edit_subnets)
         fleet_menu.add_separator()
@@ -95,7 +95,7 @@ class BalcApp:
 
         top = ttk.Frame(self.root, padding=(10, 8))
         top.pack(fill="x")
-        self.btn_refresh = ttk.Button(top, text="Обновить", command=self.refresh_async)
+        self.btn_refresh = ttk.Button(top, text="Обновить", command=self.refresh_all)
         self.btn_refresh.pack(side="left")
         self.btn_discover = ttk.Button(top, text="Найти ПК", command=self.discover_async)
         self.btn_discover.pack(side="left", padx=(6, 0))
@@ -253,7 +253,7 @@ class BalcApp:
                     self._update_busy()
                     self.log_line(f"Имя: {message}")
                     if not ok:
-                        messagebox.showwarning("Имя сохранено локально", str(message))
+                        messagebox.showerror("Имя ПК", str(message))
                     self.render()
                     self.status_var.set(self._summary())
                 elif kind == "settings_done":
@@ -262,9 +262,17 @@ class BalcApp:
                     self._update_busy()
                     self.log_line(f"Подсети: {message}")
                     if not ok:
-                        messagebox.showwarning("Подсети сохранены локально", str(message))
+                        messagebox.showerror("Подсети", str(message))
                     self.source_var.set(f"База имён: {self.inventory.source}")
                     self.status_var.set(self._summary())
+                elif kind == "push_done":
+                    ok, message = payload  # type: ignore[misc]
+                    self.log_line(f"GitHub: {message}")
+                    self.status_var.set(str(message))
+                    if not ok:
+                        messagebox.showwarning("GitHub", str(message))
+                    self.source_var.set(f"База имён: {self.inventory.source}")
+                    self.render()
         except queue.Empty:
             pass
         self.root.after(200, self._poll_queue)
@@ -320,6 +328,10 @@ class BalcApp:
             args=(discover,),
             daemon=True,
         ).start()
+
+    def refresh_all(self) -> None:
+        """«Обновить»: полное обновление — заново прочитать сеть."""
+        self.refresh_async(discover=True)
 
     def _refresh_worker(self, discover: bool) -> None:
         try:
@@ -565,16 +577,19 @@ class BalcApp:
 
     def _rebuild_worker(self, mac: str, old_attempt: str) -> None:
         name = self.fleet.display_name(mac)
-        ok, message = self.fleet.request_rebuild(mac)
-        if not ok:
-            self._queue.put(("rebuild_done", (mac, False, message)))
-            return
-        self._queue.put(("log", f"{name}: {message}"))
-        ok, message, _status = self.fleet.wait_rebuild(
-            mac,
-            old_attempt,
-            progress=lambda text: self._queue.put(("log", f"{name}: {text}")),
-        )
+        try:
+            ok, message = self.fleet.request_rebuild(mac)
+            if not ok:
+                self._queue.put(("rebuild_done", (mac, False, message)))
+                return
+            self._queue.put(("log", f"{name}: {message}"))
+            ok, message, _status = self.fleet.wait_rebuild(
+                mac,
+                old_attempt,
+                progress=lambda text: self._queue.put(("log", f"{name}: {text}")),
+            )
+        except Exception as exc:
+            ok, message = False, f"ошибка: {exc}"
         self._queue.put(("rebuild_done", (mac, ok, message)))
 
     def on_rebuild_done(self, mac: str, ok: bool, message: str) -> None:
@@ -619,8 +634,25 @@ class BalcApp:
         ).start()
 
     def _rename_worker(self, mac: str, name: str) -> None:
-        ok, message = self.inventory.set_name(mac, name)
+        try:
+            ok, message = self.inventory.set_name(mac, name)
+        except Exception as exc:
+            ok, message = False, f"ошибка: {exc}"
         self._queue.put(("rename_done", (ok, message)))
+        if ok:
+            self._push_worker()
+
+    def _push_worker(self) -> None:
+        """Отправка инвентаря в GitHub в фоне: интерфейс не блокируется."""
+
+        def run() -> None:
+            try:
+                ok, message = self.inventory.push()
+            except Exception as exc:
+                ok, message = False, f"ошибка: {exc}"
+            self._queue.put(("push_done", (ok, message)))
+
+        threading.Thread(target=run, daemon=True).start()
 
     def edit_subnets(self) -> None:
         if self._settings_running:
@@ -653,8 +685,13 @@ class BalcApp:
         ).start()
 
     def _settings_worker(self, subnets) -> None:
-        ok, message = self.inventory.set_scan_subnets(subnets)
+        try:
+            ok, message = self.inventory.set_scan_subnets(subnets)
+        except Exception as exc:
+            ok, message = False, f"ошибка: {exc}"
         self._queue.put(("settings_done", (ok, message)))
+        if ok:
+            self._push_worker()
 
     def ensure_token(self) -> bool:
         """Гарантировать токен перед записью в GitHub."""
