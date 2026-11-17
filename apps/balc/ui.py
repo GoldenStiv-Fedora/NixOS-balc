@@ -337,7 +337,7 @@ class BalcApp:
         except tk.TclError:
             pass
 
-    def refresh_async(self, discover: bool = False) -> None:
+    def refresh_async(self, discover: bool = False, force_reload: bool = False) -> None:
         if self._refresh_running:
             return
         if self._rebuild_running or self._rename_running or self._settings_running:
@@ -348,18 +348,19 @@ class BalcApp:
         self.status_var.set("Поиск ПК..." if discover else "Опрос парка...")
         threading.Thread(
             target=self._refresh_worker,
-            args=(discover,),
+            args=(discover, force_reload),
             daemon=True,
         ).start()
 
     def refresh_all(self) -> None:
-        """«Обновить»: полное обновление — заново прочитать сеть."""
-        self.refresh_async(discover=True)
+        """«Обновить»: полное обновление — заново прочитать GitHub и сеть."""
+        self.refresh_async(discover=True, force_reload=True)
 
-    def _refresh_worker(self, discover: bool) -> None:
+    def _refresh_worker(self, discover: bool, force_reload: bool) -> None:
         try:
             self.fleet.refresh(
                 discover=discover,
+                force_reload=force_reload,
                 progress=lambda message: self._queue.put(("log", message)),
             )
             self._queue.put(("refresh_done", None))

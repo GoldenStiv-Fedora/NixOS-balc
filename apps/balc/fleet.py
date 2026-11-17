@@ -130,9 +130,10 @@ class FleetManager:
     def refresh(
         self,
         discover: bool = False,
+        force_reload: bool = False,
         progress: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, PcStatus]:
-        self.inventory.reload()
+        self.inventory.reload(force=force_reload)
         targets = self._targets()
 
         found: Dict[str, PcStatus] = {}
