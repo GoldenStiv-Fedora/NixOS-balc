@@ -110,9 +110,9 @@ programs.thunar.plugins = with pkgs; [
     # Вывод сборки — через nom (nix-output-monitor), красивое дерево зависимостей.
     soberi = "sudo nixos-rebuild switch --option substituters 'https://cache.nixos.org' --flake /etc/nixos#nixos |& ${pkgs.nix-output-monitor}/bin/nom";
 
-    # Обновить из Git и пересобрать через ту же службу, что и таймер.
-    # lock-файл не трогаем: он обновляется на GitHub.
-    obnovi = "sudo systemctl start --no-block nixos-fleet-rebuild.service && echo 'Обновление запущено.' && sudo journalctl -u nixos-fleet-rebuild.service -f";
+    # Обновить из Git и пересобрать прямо в терминале: flock тот же, что у
+    # таймера, а сборка идёт через nom — красивое дерево в реальном времени.
+    obnovi = "sudo /run/current-system/sw/bin/nixos-git-sync --force";
   };
 
   system.stateVersion = "26.05"; 
