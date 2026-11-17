@@ -276,8 +276,12 @@ let
     else
       if ! CHANGED=$($GIT diff --name-only "$LAST_SUCCESS_COMMIT" "$REMOTE_HASH" -- configs apps 2>/dev/null); then
         NEED_BUILD=1
-      elif [ -n "$CHANGED" ]; then
-        NEED_BUILD=1
+      else
+        # token.enc — зашифрованный токен; его смена не требует пересборки.
+        CHANGED=$(printf '%s\n' "$CHANGED" | $GREP -v -x 'apps/balc/token.enc' || true)
+        if [ -n "$CHANGED" ]; then
+          NEED_BUILD=1
+        fi
       fi
     fi
 
