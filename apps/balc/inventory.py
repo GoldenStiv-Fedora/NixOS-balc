@@ -24,6 +24,16 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def http_error_body(exc: urllib.error.HTTPError) -> str:
+    """Текст ошибки GitHub из тела ответа (например, 403 без права записи)."""
+    try:
+        data = json.loads(exc.read().decode("utf-8", "replace"))
+        message = str(data.get("message") or "").strip()
+    except (OSError, json.JSONDecodeError, ValueError):
+        message = ""
+    return message[:200]
+
+
 def read_json(path: Path) -> Dict[str, Any]:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -309,7 +319,8 @@ class Inventory:
             try:
                 remote, sha = self._fetch_remote_api(token)
             except urllib.error.HTTPError as exc:
-                return False, f"GitHub API: {exc.code}"
+                body = http_error_body(exc)
+                return False, f"GitHub API: {exc.code} {body}".strip()
             except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
                 return False, f"GitHub API: {exc}"
 
@@ -356,7 +367,8 @@ class Inventory:
                 if exc.code in (409, 422):
                     last_error = str(exc.code)
                     continue
-                return False, f"GitHub API: {exc.code}"
+                body = http_error_body(exc)
+                return False, f"GitHub API: {exc.code} {body}".strip()
             except (urllib.error.URLError, OSError) as exc:
                 return False, f"GitHub API: {exc}"
         return False, f"GitHub API: конфликт версий ({last_error}), повторите позже"
