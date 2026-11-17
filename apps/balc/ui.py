@@ -213,11 +213,20 @@ class BalcApp:
             log_frame,
             height=7,
             wrap="word",
-            state="disabled",
+            state="normal",
             font=("DejaVu Sans Mono", 9),
         )
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=log_scroll.set)
+        # Журнал только для чтения, но текст можно выделять и копировать.
+        self.log.bind("<Key>", self._log_key_guard)
+        self.log.bind("<Control-c>", lambda _e: self.log.event_generate("<<Copy>>"))
+        self.log.bind("<Control-a>", self._log_select_all)
+        self.log_menu = tk.Menu(self.root, tearoff=0)
+        self.log_menu.add_command(label="Копировать", command=self._log_copy)
+        self.log_menu.add_command(label="Выделить всё", command=self._log_select_all)
+        self.log_menu.add_command(label="Копировать всё", command=self._log_copy_all)
+        self.log.bind("<Button-3>", self._log_context_menu)
         self.log.pack(side="left", fill="both", expand=True)
         log_scroll.pack(side="right", fill="y")
 
@@ -854,11 +863,37 @@ class BalcApp:
 
     def log_line(self, message: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log.configure(state="normal")
         self.log.insert("end", f"[{timestamp}] {message}\n")
         self.log.see("end")
-        self.log.configure(state="disabled")
         self._log_to_file(f"[{timestamp}] {message}")
+
+    def _log_key_guard(self, event) -> str:
+        # Ctrl-сочетания пропускаем (копирование/выделение), остальные клавиши
+        # блокируем: журнал нельзя редактировать.
+        if event.state & 0x0004:
+            return None
+        return "break"
+
+    def _log_select_all(self, _event=None) -> str:
+        self.log.tag_add("sel", "1.0", "end-1c")
+        return "break"
+
+    def _log_copy(self) -> None:
+        try:
+            selection = self.log.get("sel.first", "sel.last")
+        except tk.TclError:
+            return
+        if selection:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(selection)
+
+    def _log_copy_all(self) -> None:
+        text = self.log.get("1.0", "end-1c")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+
+    def _log_context_menu(self, event) -> None:
+        self.log_menu.tk_popup(event.x_root, event.y_root)
 
     def _log_to_file(self, line: str) -> None:
         """Дублировать журнал в файл, чтобы ошибки можно было посмотреть после."""
