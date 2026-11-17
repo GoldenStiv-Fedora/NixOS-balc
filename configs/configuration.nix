@@ -84,6 +84,7 @@
     xfce4-pulseaudio-plugin 
     xfce4-xkb-plugin 
     pavucontrol
+    pkgs-unstable.amnezia-vpn
   ];
 # Добавляем архиватор
 programs.thunar.plugins = with pkgs; [
