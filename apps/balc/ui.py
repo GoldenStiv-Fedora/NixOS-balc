@@ -126,13 +126,14 @@ class BalcApp:
         paned.add(left, weight=4)
         paned.add(right, weight=2)
 
-        columns = ("name", "ip", "state", "build", "commit", "checked", "error")
+        columns = ("name", "ip", "state", "build", "commit", "built", "checked", "error")
         headings = {
             "name": "Имя",
             "ip": "IP",
             "state": "Сеть",
             "build": "Сборка",
             "commit": "Коммит",
+            "built": "Обновлён",
             "checked": "Проверен",
             "error": "Ошибка",
         }
@@ -142,6 +143,7 @@ class BalcApp:
             "state": 100,
             "build": 110,
             "commit": 130,
+            "built": 140,
             "checked": 130,
             "error": 300,
         }
@@ -167,10 +169,17 @@ class BalcApp:
         self.tree.bind("<Button-3>", self.show_context_menu)
         self.tree.bind("<Double-1>", lambda _event: self.open_ssh())
 
-        tree_scroll = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=tree_scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        tree_scroll.pack(side="right", fill="y")
+        tree_vscroll = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
+        tree_hscroll = ttk.Scrollbar(left, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(
+            yscrollcommand=tree_vscroll.set,
+            xscrollcommand=tree_hscroll.set,
+        )
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        tree_vscroll.grid(row=0, column=1, sticky="ns")
+        tree_hscroll.grid(row=1, column=0, sticky="ew")
+        left.grid_rowconfigure(0, weight=1)
+        left.grid_columnconfigure(0, weight=1)
 
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Пересобрать", command=self.rebuild_selected)
@@ -270,6 +279,7 @@ class BalcApp:
                     self.log_line(f"GitHub: {message}")
                     self.status_var.set(str(message))
                     if not ok:
+                        self.history.event("error", f"GitHub: {message}")
                         messagebox.showwarning("GitHub", str(message))
                     self.source_var.set(f"База имён: {self.inventory.source}")
                     self.render()
@@ -404,6 +414,8 @@ class BalcApp:
             return self._build_label(status)
         if column == "commit":
             return status.success_commit or status.remote_commit or ""
+        if column == "built":
+            return self._iso_ts(status.last_success_at)
         if column == "checked":
             return status.checked_at or 0.0
         if column == "error":
@@ -434,11 +446,12 @@ class BalcApp:
             state = status.state_label
             build = self._build_label(status)
             commit = self._commit_label(status)
+            built = self._format_iso(status.last_success_at)
             checked = self._format_time(status.checked_at)
             error = " ".join((status.error or status.last_error or "").split())
             if len(error) > 90:
                 error = error[:87] + "..."
-            haystack = f"{name} {ip} {mac} {state} {build} {error}".lower()
+            haystack = f"{name} {ip} {mac} {state} {build} {built} {error}".lower()
             if query and query not in haystack:
                 continue
 
@@ -457,7 +470,7 @@ class BalcApp:
                 "",
                 "end",
                 iid=mac or f"ip:{ip}",
-                values=(name, ip, state, build, commit, checked, error),
+                values=(name, ip, state, build, commit, built, checked, error),
                 tags=(tag,),
             )
 
@@ -504,7 +517,7 @@ class BalcApp:
                 "",
                 f"Последняя проверка: {self._format_time(status.checked_at)}",
                 f"Последний результат: {status.last_result or '—'}",
-                f"Последняя успешная сборка: {status.last_success_at or '—'}",
+                f"Последняя успешная сборка: {self._format_iso(status.last_success_at)}",
                 f"Успешный коммит: {status.success_commit or '—'}",
                 f"Коммит в GitHub: {status.remote_commit or '—'}",
                 f"Сборка активна: {status.rebuild_active or '—'}",
@@ -532,6 +545,28 @@ class BalcApp:
             return datetime.fromtimestamp(timestamp).strftime("%d.%m.%Y %H:%M")
         except (OSError, ValueError):
             return "—"
+
+    @staticmethod
+    def _format_iso(value: str) -> str:
+        """ISO-время из status.json в читаемый вид."""
+        if not value:
+            return "—"
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.astimezone().strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            return "—"
+
+    @staticmethod
+    def _iso_ts(value: str) -> datetime:
+        """ISO-время для сортировки; некорректное считается самым старым."""
+        if not value:
+            return datetime.min
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.astimezone().replace(tzinfo=None)
+        except ValueError:
+            return datetime.min
 
     def show_context_menu(self, event) -> None:
         row = self.tree.identify_row(event.y)
@@ -728,6 +763,7 @@ class BalcApp:
         if ok:
             self.log_line("Токен GitHub расшифрован.")
             return True
+        self.log_line(f"ОШИБКА: {message}")
         messagebox.showerror("Мастер-пароль", message)
         return False
 
@@ -822,6 +858,22 @@ class BalcApp:
         self.log.insert("end", f"[{timestamp}] {message}\n")
         self.log.see("end")
         self.log.configure(state="disabled")
+        self._log_to_file(f"[{timestamp}] {message}")
+
+    def _log_to_file(self, line: str) -> None:
+        """Дублировать журнал в файл, чтобы ошибки можно было посмотреть после."""
+        try:
+            config.LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with config.LOG_FILE.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+            if config.LOG_FILE.stat().st_size > 1_000_000:
+                lines = config.LOG_FILE.read_text(encoding="utf-8").splitlines()
+                config.LOG_FILE.write_text(
+                    "\n".join(lines[-3000:]) + "\n",
+                    encoding="utf-8",
+                )
+        except OSError:
+            pass
 
     def about(self) -> None:
         messagebox.showinfo(

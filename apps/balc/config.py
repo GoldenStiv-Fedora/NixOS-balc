@@ -12,6 +12,7 @@ CONFIG_DIR = HOME / ".config" / "balc"
 LOCAL_INVENTORY = CONFIG_DIR / "inventory.json"
 LOCAL_HISTORY = CONFIG_DIR / "history.json"
 GITHUB_TOKEN_FILE = CONFIG_DIR / "github_token"
+LOG_FILE = CONFIG_DIR / "app.log"
 
 REPO_OWNER = "GoldenStiv-Fedora"
 REPO_NAME = "NixOS-balc"
