@@ -392,6 +392,12 @@ in {
           command = "/run/current-system/sw/bin/nixos-fleet-rebuild";
           options = [ "NOPASSWD" ];
         }
+        {
+          # После успешной отправки инвентаря приложение подтягивает свежий
+          # inventory.json с GitHub в /etc/nixos/apps/ — без пересборки.
+          command = "/run/current-system/sw/bin/nixos-git-sync";
+          options = [ "NOPASSWD" ];
+        }
       ];
     }
   ];

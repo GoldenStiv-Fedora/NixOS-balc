@@ -1,4 +1,3 @@
-# Ver. 2.0
 { config, pkgs, pkgs-unstable, lib, ... }:
 
 {
