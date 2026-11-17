@@ -298,6 +298,11 @@ class Inventory:
             if self.vault_available():
                 return False, "токен заблокирован; введите мастер-пароль"
             return False, "токен GitHub не задан; имена сохранены локально"
+        if not token.isascii():
+            return False, (
+                "токен содержит недопустимые символы (кириллица): "
+                "пересоздайте token.enc командой token_tool.py"
+            )
 
         last_error = ""
         for _ in range(3):

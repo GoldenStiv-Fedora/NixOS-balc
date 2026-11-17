@@ -290,6 +290,10 @@ class BalcApp:
                     if not ok:
                         self.history.event("error", f"GitHub: {message}")
                         messagebox.showwarning("GitHub", str(message))
+                    else:
+                        # GitHub — истина: сразу забираем свежий инвентарь
+                        # в системную копию /etc/nixos/apps/inventory.json.
+                        self._sync_system_inventory()
                     self.source_var.set(f"База имён: {self.inventory.source}")
                     self.render()
         except queue.Empty:
@@ -695,6 +699,31 @@ class BalcApp:
             except Exception as exc:
                 ok, message = False, f"ошибка: {exc}"
             self._queue.put(("push_done", (ok, message)))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _sync_system_inventory(self) -> None:
+        """Подтянуть свежий inventory.json из GitHub в /etc/nixos/apps/.
+
+        Запускает службу синка: изменение только инвентаря не вызывает
+        пересборку, скрипт лишь обновляет системную копию файла.
+        """
+
+        def run() -> None:
+            try:
+                result = subprocess.run(
+                    ["sudo", "-n", config.SYNC_COMMAND],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
+                if result.returncode == 0:
+                    self._queue.put(("log", "Системная копия инвентаря обновлена."))
+                else:
+                    detail = (result.stderr or result.stdout).strip()[:160]
+                    self._queue.put(("log", f"Синк не выполнен: {detail}"))
+            except (OSError, subprocess.SubprocessError) as exc:
+                self._queue.put(("log", f"Синк не выполнен: {exc}"))
 
         threading.Thread(target=run, daemon=True).start()
 

@@ -33,6 +33,7 @@ SSH_COMMAND_TIMEOUT = 25
 
 REBUILD_TRIGGER = "/run/current-system/sw/bin/nixos-fleet-rebuild"
 REBUILD_SERVICE = "nixos-fleet-rebuild.service"
+SYNC_COMMAND = "/run/current-system/sw/bin/nixos-git-sync"
 STATUS_FILE = "/var/lib/nixos-git-sync/status.json"
 
 REFRESH_SECONDS = 60

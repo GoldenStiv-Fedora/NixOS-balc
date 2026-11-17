@@ -179,6 +179,12 @@ def decrypt_token(password: str, path: Path) -> str:
         raise VaultError("повреждённый файл токена") from exc
     if not token:
         raise VaultError("токен пуст")
+    if not token.isascii():
+        raise VaultError(
+            "токен содержит недопустимые символы (кириллица). "
+            "GitHub-токен состоит только из латинских букв и цифр — "
+            "пересоздайте token.enc командой token_tool.py"
+        )
     return token
 
 

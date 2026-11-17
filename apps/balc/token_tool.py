@@ -11,10 +11,31 @@
 import getpass
 import sys
 from pathlib import Path
+from typing import List, Tuple
 
 import vault
 
 MIN_PASSWORD_LENGTH = 16
+
+
+def clean_token(raw: str) -> Tuple[str, List[str], int]:
+    """Убрать невидимые символы; заметить видимую кириллицу.
+
+    Возвращает (токен, список видимых недопустимых символов, число
+    удалённых невидимых).
+    """
+    token = raw.strip()
+    cleaned: List[str] = []
+    visible_bad: List[str] = []
+    invisible = 0
+    for index, ch in enumerate(token):
+        if ch.isascii():
+            cleaned.append(ch)
+        elif ch.isprintable():
+            visible_bad.append(f"'{ch}' на позиции {index + 1}")
+        else:
+            invisible += 1
+    return "".join(cleaned), visible_bad, invisible
 
 
 def main() -> int:
@@ -23,10 +44,26 @@ def main() -> int:
         return 2
     path = Path(sys.argv[1])
 
-    token = getpass.getpass("Токен GitHub (ввод скрыт): ").strip()
+    raw = getpass.getpass("Токен GitHub (ввод скрыт): ")
+    token, visible_bad, invisible = clean_token(raw)
+    if visible_bad:
+        print("В токене есть недопустимые символы:", ", ".join(visible_bad))
+        print(
+            "Токен GitHub состоит только из латинских букв и цифр: "
+            "ghp_... (classic) или github_pat_... (fine-grained). "
+            "Проверьте раскладку и вставьте заново."
+        )
+        return 1
+    if invisible:
+        print(f"Удалено невидимых символов: {invisible} (попали при копировании).")
     if not token:
         print("Токен пуст, ничего не сохранено.")
         return 1
+    if not token.startswith(("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_")):
+        print(
+            "Внимание: это не похоже на токен GitHub (ожидается ghp_... или "
+            "github_pat_...). Сохраняю как есть, но запись в GitHub может не работать."
+        )
 
     password = getpass.getpass("Мастер-пароль: ")
     if len(password) < MIN_PASSWORD_LENGTH:
