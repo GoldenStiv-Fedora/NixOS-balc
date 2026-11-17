@@ -5,7 +5,13 @@ from typing import Optional, Tuple
 
 import paramiko
 
-from config import SSH_CONNECT_TIMEOUT, SSH_PASSWORD, SSH_PORT, SSH_USER
+from config import (
+    SSH_COMMAND_TIMEOUT,
+    SSH_CONNECT_TIMEOUT,
+    SSH_PASSWORD,
+    SSH_PORT,
+    SSH_USER,
+)
 
 
 class SshError(RuntimeError):
