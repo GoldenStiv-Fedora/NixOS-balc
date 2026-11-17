@@ -1,4 +1,4 @@
-{ config, pkgs, pkgs-unstable, ... }:
+{ config, pkgs, pkgs-unstable, lib, ... }:
 
 {
   imports = [
@@ -8,7 +8,7 @@
     ./vpn.nix
     ./git-sync.nix
     ./printers.nix
-  ];
+  ] ++ lib.optional (builtins.pathExists ./apps/balc/balc.nix) ./apps/balc/balc.nix;
 
   # Загрузчик UEFI с ограничением до 4-х сборок и максимально тихой загрузкой
   boot.loader.systemd-boot.enable = true;
@@ -39,9 +39,20 @@
   nix.settings.auto-optimise-store = true;
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nix.settings.substituters = [
-    "https://nixos-cache-proxy.cofob.dev"
     "https://cache.nixos.org"
   ];
+
+  # SSH для управления парком с любого ПК под пользователем balc.
+  # Пароли не меняем: используются уже заданные в users.nix.
+  services.openssh = {
+    enable = true;
+    openFirewall = true;
+    settings = {
+      PasswordAuthentication = true;
+      KbdInteractiveAuthentication = false;
+      PermitRootLogin = "no";
+    };
+  };
 
   networking.hostName = "nixos";
   networking.networkmanager.enable = true;
@@ -94,11 +105,12 @@ programs.thunar.plugins = with pkgs; [
 
   # ПРОЗРАЧНЫЕ АЛИАСЫ
   environment.shellAliases = {
-    # Собрать текущую систему (--option перезаписывает kривой nix.conf)
-    soberi = "sudo nixos-rebuild switch --option substituters 'https://cache.nixos.org https://nixos-cache-proxy.cofob.dev' --flake /etc/nixos#nixos";
+    # Собрать текущую систему. Используем только официальный кэш.
+    soberi = "sudo nixos-rebuild switch --option substituters 'https://cache.nixos.org' --flake /etc/nixos#nixos";
 
-    # Обновить из Git + Обновить каналы + Собрать (Защита: исключаем hardware-configuration.nix)
-    obnovi = "cd /etc/nixos/.sync && sudo git fetch origin main && sudo git reset --hard origin/main && sudo rsync -a ./configs/ /etc/nixos/ --exclude=hardware-configuration.nix && sudo sed -i 's|https://nixos.snix.store ||g; s|https://nixos.snix.store||g' /etc/nix/nix.conf && cd /etc/nixos && sudo nix flake lock --option substituters 'https://cache.nixos.org https://nixos-cache-proxy.cofob.dev' --update-input nixpkgs && soberi";
+    # Обновить из Git и пересобрать через ту же службу, что и таймер.
+    # lock-файл не трогаем: он обновляется на GitHub.
+    obnovi = "sudo systemctl start --no-block nixos-fleet-rebuild.service && echo 'Обновление запущено.' && sudo journalctl -u nixos-fleet-rebuild.service -f";
   };
 
   system.stateVersion = "26.05"; 
