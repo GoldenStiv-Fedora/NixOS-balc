@@ -48,12 +48,27 @@ class PcStatus:
         return str(self.status.get("last_attempt_at") or "")
 
     @property
+    def synced_commit(self) -> str:
+        return str(self.status.get("last_synced_commit") or "")
+
+    @property
     def stale(self) -> bool:
+        """Требуется ли пересборка: конфиг в GitHub новее успешно собранного."""
         if not self.online:
             return False
         if not self.remote_commit:
             return False
-        return self.success_commit != self.remote_commit
+        if self.success_commit == self.remote_commit:
+            return False
+        # Изменения уже подтянуты, но пересборка не нужна (инвентарь/картинки).
+        # В этом случае last_success_commit остаётся на последней сборке, а
+        # remote_commit уходит вперёд — это не «не пересобран».
+        if self.last_result == "assets-only" and self.synced_commit == self.remote_commit:
+            return False
+        # Ещё ни одной успешной сборки нет — считать ожидающим сборки.
+        if not self.success_commit:
+            return True
+        return True
 
     @property
     def has_error(self) -> bool:

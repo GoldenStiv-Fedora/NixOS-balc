@@ -407,7 +407,7 @@ class BalcApp:
     def _commit_label(self, status: PcStatus) -> str:
         success = status.short_commit(status.success_commit)
         remote = status.short_commit(status.remote_commit)
-        if status.success_commit and status.remote_commit and status.success_commit != status.remote_commit:
+        if status.stale and status.success_commit and status.remote_commit:
             return f"{success} → {remote}"
         if status.success_commit:
             return success
