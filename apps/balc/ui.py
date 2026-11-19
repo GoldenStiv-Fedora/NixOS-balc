@@ -83,6 +83,7 @@ class BalcApp:
 
         pc_menu = tk.Menu(menubar, tearoff=0)
         pc_menu.add_command(label="Пересобрать", command=self.rebuild_selected)
+        pc_menu.add_command(label="Обновить отстающие", command=self.rebuild_needed)
         pc_menu.add_command(label="Переименовать", command=self.rename_selected)
         pc_menu.add_command(label="Открыть SSH", command=self.open_ssh)
         pc_menu.add_command(label="Копировать IP", command=self.copy_ip)
@@ -101,6 +102,10 @@ class BalcApp:
         self.btn_discover.pack(side="left", padx=(6, 0))
         self.btn_rebuild = ttk.Button(top, text="Пересобрать", command=self.rebuild_selected)
         self.btn_rebuild.pack(side="left", padx=(6, 0))
+        self.btn_rebuild_needed = ttk.Button(
+            top, text="Обновить отстающие", command=self.rebuild_needed
+        )
+        self.btn_rebuild_needed.pack(side="left", padx=(6, 0))
         self.btn_rename = ttk.Button(top, text="Переименовать", command=self.rename_selected)
         self.btn_rename.pack(side="left", padx=(6, 0))
         self.btn_subnets = ttk.Button(top, text="Подсети…", command=self.edit_subnets)
@@ -131,7 +136,7 @@ class BalcApp:
             "name": "Имя",
             "ip": "IP",
             "state": "Сеть",
-            "build": "Сборка",
+            "build": "Обновление",
             "commit": "Коммит",
             "built": "Обновлён",
             "checked": "Проверен",
@@ -183,6 +188,7 @@ class BalcApp:
 
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Пересобрать", command=self.rebuild_selected)
+        self.context_menu.add_command(label="Обновить отстающие", command=self.rebuild_needed)
         self.context_menu.add_command(label="Переименовать", command=self.rename_selected)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Открыть SSH", command=self.open_ssh)
@@ -265,6 +271,29 @@ class BalcApp:
                 elif kind == "rebuild_done":
                     mac, ok, message = payload  # type: ignore[misc]
                     self.on_rebuild_done(str(mac), bool(ok), str(message))
+                elif kind == "batch_rebuild_done":
+                    ok_count, fail_count, total = payload  # type: ignore[misc]
+                    self._rebuild_running = False
+                    self._update_busy()
+                    self.log_line(
+                        f"Запуск обновления завершён: запущено {ok_count} из {total}, "
+                        f"ошибок запуска {fail_count}."
+                    )
+                    self.status_var.set(self._summary())
+                    if fail_count:
+                        messagebox.showwarning(
+                            "Обновление",
+                            f"Запущено: {ok_count} из {total}.\n"
+                            f"Не удалось запустить: {fail_count}.\n"
+                            "Подробности — в журнале.",
+                        )
+                    else:
+                        messagebox.showinfo(
+                            "Обновление",
+                            f"Обновление запущено на {ok_count} ПК.\n"
+                            "Состояние будет обновляться автоматически.",
+                        )
+                    self.root.after(1000, self.refresh_async)
                 elif kind == "rename_done":
                     ok, message = payload  # type: ignore[misc]
                     self._rename_running = False
@@ -328,6 +357,7 @@ class BalcApp:
             self.btn_refresh,
             self.btn_discover,
             self.btn_rebuild,
+            self.btn_rebuild_needed,
             self.btn_rename,
             self.btn_subnets,
         ):
@@ -374,39 +404,54 @@ class BalcApp:
 
     def on_refresh_done(self) -> None:
         self.render()
-        self.source_var.set(f"База имён: {self.inventory.source}")
+        self.source_var.set(self._source_text())
         self.status_var.set(self._summary())
         self._update_busy()
 
+    def _source_text(self) -> str:
+        target = PcStatus.short_commit(self.fleet.target_commit)
+        source = self.fleet.target_source or "—"
+        return f"База имён: {self.inventory.source} · Цель: {target} ({source})"
+
     def _summary(self) -> str:
-        total, online, stale, errors = self.fleet.summary()
+        total, online, need, errors = self.fleet.summary()
+        target = PcStatus.short_commit(self.fleet.target_commit)
         return (
-            f"Всего: {total} · В сети: {online} · "
-            f"Не пересобраны: {stale} · Ошибки: {errors}"
+            f"Цель: {target} · Всего: {total} · В сети: {online} · "
+            f"Требуют обновления: {need} · Ошибки: {errors}"
         )
 
     def _build_label(self, status: PcStatus) -> str:
-        if not status.online:
-            return "—"
-        if status.rebuild_active in {"active", "activating", "reloading"}:
-            return "идёт"
-        if status.last_result in {"building", "built", "switching"} and status.sync_active in {
-            "active",
-            "activating",
-            "reloading",
-        }:
+        target = self.fleet.target_commit
+        if status.is_syncing():
             return "идёт"
         if status.has_error:
             return "ошибка"
-        if status.stale:
-            return "не пересобран"
+        if target:
+            if status.needs_fleet_update(target):
+                return "требуется"
+            if status.success_commit or status.synced_commit == target:
+                return "актуально"
+        if not status.online:
+            known = status.success_commit or status.synced_commit or status.remote_commit
+            return "актуально?" if known else "—"
         if status.success_commit:
             return "готово"
         return "нет данных"
 
     def _commit_label(self, status: PcStatus) -> str:
+        target = self.fleet.target_commit
         success = status.short_commit(status.success_commit)
         remote = status.short_commit(status.remote_commit)
+        synced = status.short_commit(status.synced_commit)
+        target_s = status.short_commit(target)
+        if target and status.needs_fleet_update(target):
+            current = success or synced or remote or "—"
+            return f"{current} → {target_s}"
+        if target and not status.needs_fleet_update(target):
+            # Если цель достигнута, показываем фактическую собранную ревизию;
+            # при assets-only она может отличаться от target — это нормально.
+            return success or target_s or synced or remote or "—"
         if status.stale and status.success_commit and status.remote_commit:
             return f"{success} → {remote}"
         if status.success_commit:
@@ -454,10 +499,16 @@ class BalcApp:
         if children:
             self.tree.delete(*children)
 
+        target = self.fleet.target_commit
         for mac, record, status in rows:
             name = str(record.get("name") or "Без имени")
             ip = status.ip or str(record.get("ip") or "—")
-            state = status.state_label
+            if status.online:
+                state = "в сети"
+            elif target and status.needs_fleet_update_offline(target):
+                state = "оффлайн (нужна)"
+            else:
+                state = "оффлайн"
             build = self._build_label(status)
             commit = self._commit_label(status)
             built = self._format_iso(status.last_success_at)
@@ -465,17 +516,17 @@ class BalcApp:
             error = " ".join((status.error or status.last_error or "").split())
             if len(error) > 90:
                 error = error[:87] + "..."
-            haystack = f"{name} {ip} {mac} {state} {build} {built} {error}".lower()
+            haystack = f"{name} {ip} {mac} {state} {build} {commit} {built} {error}".lower()
             if query and query not in haystack:
                 continue
 
             if not status.online:
-                tag = "offline"
-            elif status.rebuild_active in {"active", "activating", "reloading"}:
+                tag = "stale" if (target and status.needs_fleet_update_offline(target)) else "offline"
+            elif status.is_syncing():
                 tag = "building"
             elif status.has_error:
                 tag = "error"
-            elif status.stale:
+            elif target and status.needs_fleet_update(target):
                 tag = "stale"
             else:
                 tag = "online"
@@ -515,14 +566,31 @@ class BalcApp:
 
     def _show_details(self, data: Optional[Tuple[Dict, PcStatus]]) -> None:
         if data is None:
-            text = "Выберите ПК в списке."
+            target = PcStatus.short_commit(self.fleet.target_commit)
+            text = (
+                "Выберите ПК в списке.\n\n"
+                f"Целевой коммит парка: {target or '—'}"
+            )
         else:
             record, status = data
+            target = self.fleet.target_commit
+            target_s = PcStatus.short_commit(target) or "—"
+            if target:
+                needs = status.needs_fleet_update(target) or (
+                    not status.online and status.needs_fleet_update_offline(target)
+                )
+            else:
+                needs = status.stale
+            verdict = "ДА" if needs else "НЕТ"
+            hint = status.update_hint(target)
+            state = status.fleet_state(target)
             lines = [
                 f"Имя: {record.get('name') or 'Без имени'}",
                 f"MAC: {status.mac or '—'}",
                 f"IP: {status.ip or record.get('ip') or '—'}",
-                f"Состояние: {status.state_label}",
+                f"Состояние: {state}",
+                f"Требуется обновление: {verdict}",
+                f"Целевой коммит парка: {target_s}",
                 f"Hostname: {status.hostname or '—'}",
                 f"Machine-ID: {status.machine_id or '—'}",
                 f"NixOS: {status.nixos_version or '—'}",
@@ -533,17 +601,36 @@ class BalcApp:
                 f"Последний результат: {status.last_result or '—'}",
                 f"Последняя успешная сборка: {self._format_iso(status.last_success_at)}",
                 f"Успешный коммит: {status.success_commit or '—'}",
-                f"Коммит в GitHub: {status.remote_commit or '—'}",
+                f"Синхронизированный коммит: {status.synced_commit or '—'}",
+                f"Коммит, видимый ПК: {status.remote_commit or '—'}",
                 f"Сборка активна: {status.rebuild_active or '—'}",
                 f"Синхронизация активна: {status.sync_active or '—'}",
                 f"Uptime: {status.uptime or '—'}",
                 f"Диск: {status.disk or '—'}",
                 f"/nix/store: {status.store_size or '—'}",
             ]
+            if hint:
+                lines.extend(["", f"Причина: {hint}"])
+            elif (
+                target
+                and not needs
+                and status.success_commit
+                and status.success_commit != target
+                and status.synced_commit == target
+                and status.last_result == "assets-only"
+            ):
+                lines.extend(
+                    [
+                        "",
+                        "Примечание: целевой коммит достигнут без пересборки "
+                        "(изменения только в данных/инвентаре); последняя "
+                        "успешная сборка осталась на прежней ревизии.",
+                    ]
+                )
             if status.error:
                 lines.extend(["", f"Ошибка связи: {status.error}"])
             if status.last_error:
-                lines.extend(["", f"Ошибка сборки: {status.last_error}"])
+                lines.extend(["", f"Ошибка: {status.last_error}"])
             text = "\n".join(lines)
 
         self.details.configure(state="normal")
@@ -651,6 +738,96 @@ class BalcApp:
         else:
             messagebox.showerror("Пересборка", f"{name}: {message}")
         self.root.after(500, self.refresh_async)
+
+    def rebuild_needed(self) -> None:
+        if self._rebuild_running:
+            messagebox.showinfo("Обновление", "Операция уже выполняется.")
+            return
+        target = self.fleet.target_commit
+        if not target:
+            messagebox.showinfo(
+                "Обновление",
+                "Целевой коммит парка неизвестен. Нажмите «Обновить» и повторите.",
+            )
+            return
+        actionable = self.fleet.actionable_updates()
+        pending_offline = [
+            item
+            for item in self.fleet.needing_update(online_only=False)
+            if not item[2].online
+        ]
+        if not actionable and not pending_offline:
+            messagebox.showinfo(
+                "Обновление",
+                f"Все ПК соответствуют целевому коммиту {PcStatus.short_commit(target)}.",
+            )
+            return
+        if not actionable and pending_offline:
+            names = ", ".join(
+                self.fleet.display_name(mac) for mac, _r, _s in pending_offline[:6]
+            )
+            extra = "…" if len(pending_offline) > 6 else ""
+            messagebox.showinfo(
+                "Обновление",
+                "Нет доступных по сети ПК, требующих обновления.\n\n"
+                f"Оффлайн и требуют обновления: {names}{extra}\n"
+                "Они будут обновлены после включения (таймером или вручную).",
+            )
+            return
+
+        names = [self.fleet.display_name(mac) for mac, _r, _s in actionable]
+        preview = "\n".join(f"• {name}" for name in names[:12])
+        if len(names) > 12:
+            preview += f"\n… и ещё {len(names) - 12}"
+        note = ""
+        if pending_offline:
+            off_names = ", ".join(
+                self.fleet.display_name(mac) for mac, _r, _s in pending_offline[:5]
+            )
+            more = "…" if len(pending_offline) > 5 else ""
+            note = (
+                f"\n\nЕщё оффлайн и требуют обновления: {off_names}{more} "
+                "(обновятся после включения)."
+            )
+        if not messagebox.askyesno(
+            "Обновить отстающие",
+            (
+                f"Целевой коммит: {PcStatus.short_commit(target)}\n"
+                f"Запустить обновление на {len(names)} ПК?\n\n{preview}{note}\n\n"
+                "На каждом ПК будет запущена синхронизация/сборка из GitHub. "
+                "Это может занять несколько минут."
+            ),
+        ):
+            return
+
+        self._rebuild_running = True
+        self._update_busy()
+        self.status_var.set(f"Запуск обновления: {len(names)} ПК")
+        self.log_line(
+            f"Запуск обновления отстающих ПК: {len(names)} (цель {PcStatus.short_commit(target)})"
+        )
+        threading.Thread(
+            target=self._batch_rebuild_worker,
+            args=(actionable,),
+            daemon=True,
+        ).start()
+
+    def _batch_rebuild_worker(self, items) -> None:
+        ok_count = 0
+        fail_count = 0
+        for mac, _record, _status in items:
+            name = self.fleet.display_name(mac)
+            try:
+                ok, message = self.fleet.request_rebuild(mac)
+            except Exception as exc:
+                ok, message = False, f"ошибка: {exc}"
+            if ok:
+                ok_count += 1
+                self._queue.put(("log", f"{name}: {message}"))
+            else:
+                fail_count += 1
+                self._queue.put(("log", f"{name}: ошибка запуска — {message}"))
+        self._queue.put(("batch_rebuild_done", (ok_count, fail_count, len(items))))
 
     def rename_selected(self) -> None:
         mac = self.selected_mac()

@@ -1,10 +1,13 @@
 """Управление парком: опрос, обнаружение, пересборка."""
 
+import json
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, List, Optional, Tuple
 
-from config import PROBE_WORKERS
+from config import COMMITS_API_URL, PROBE_WORKERS
 from inventory import Inventory
 from models import PcStatus
 from notify import Notifier
@@ -15,13 +18,37 @@ from scanner import local_subnets, scan_many
 from store import History
 
 
+def fetch_target_commit() -> str:
+    """Последний коммит ветки на GitHub — единая цель для всего парка."""
+    request = urllib.request.Request(
+        COMMITS_API_URL,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "balc/0.1",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        if isinstance(data, dict):
+            sha = str(data.get("sha") or "").strip()
+            if sha:
+                return sha
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError):
+        return ""
+    return ""
+
+
 class FleetManager:
     def __init__(self, inventory: Inventory, history: History, notifier: Notifier):
         self.inventory = inventory
         self.history = history
         self.notifier = notifier
         self.statuses: Dict[str, PcStatus] = {}
+        self.target_commit: str = ""
+        self.target_source: str = ""
         self._last_discover = 0.0
+        self._last_target_fetch = 0.0
 
     def rows(self) -> List[Tuple[str, Dict, PcStatus]]:
         records = self.inventory.all()
@@ -127,6 +154,33 @@ class FleetManager:
                     progress(f"Найден: {ip} ({status.mac})")
         return found
 
+    def _update_target(self, force: bool = False) -> None:
+        """Определить целевой коммит парка (HEAD GitHub)."""
+        now = time.time()
+        fetched = ""
+        if force or not self.target_commit or now - self._last_target_fetch > 120:
+            fetched = fetch_target_commit()
+            if fetched:
+                self._last_target_fetch = now
+
+        # Дополнительный ориентир — самый новый remote, увиденный ПК.
+        seen = [
+            status.remote_commit
+            for status in self.statuses.values()
+            if status.remote_commit
+        ]
+        seen_latest = max(seen) if seen else ""
+        # SHA не сортируются по времени, поэтому предпочитаем GitHub; если он
+        # недоступен — оставляем прежнюю цель, иначе берём увиденный.
+        if fetched:
+            self.target_commit = fetched
+            self.target_source = "GitHub"
+        elif not self.target_commit and seen_latest:
+            self.target_commit = seen_latest
+            self.target_source = "парк"
+        elif seen_latest and self.target_commit and seen_latest == self.target_commit:
+            self.target_source = self.target_source or "парк"
+
     def refresh(
         self,
         discover: bool = False,
@@ -158,7 +212,7 @@ class FleetManager:
                 continue
             previous = self.statuses.get(mac) or PcStatus(mac=mac, ip=ip)
             previous.online = False
-            previous.error = "нет связи"
+            previous.error = previous.error or "нет связи"
             previous.checked_at = now
             self.statuses[mac] = previous
             self.history.remember(previous)
@@ -170,7 +224,26 @@ class FleetManager:
             error = "ожидание проверки" if ip else "IP неизвестен — выполните поиск"
             self.statuses[mac] = PcStatus(mac=mac, ip=ip, error=error)
 
+        self._update_target(force=force_reload)
         return self.statuses
+
+    def needing_update(self, online_only: bool = True) -> List[Tuple[str, Dict, PcStatus]]:
+        """ПК, которые не соответствуют целевому коммиту парка."""
+        result: List[Tuple[str, Dict, PcStatus]] = []
+        for mac, record, status in self.rows():
+            if online_only and not status.online:
+                continue
+            if status.needs_fleet_update(self.target_commit):
+                result.append((mac, record, status))
+        return result
+
+    def actionable_updates(self) -> List[Tuple[str, Dict, PcStatus]]:
+        """ПК, на которых сейчас можно запустить обновление."""
+        return [
+            item
+            for item in self.needing_update(online_only=True)
+            if not item[2].is_syncing()
+        ]
 
     def display_name(self, mac: str) -> str:
         name = self.inventory.name_for(mac)
@@ -211,6 +284,17 @@ class FleetManager:
         rows = self.rows()
         total = len(rows)
         online = sum(1 for _, _, status in rows if status.online)
-        stale = sum(1 for _, _, status in rows if status.online and status.stale)
-        errors = sum(1 for _, _, status in rows if status.online and status.has_error)
-        return total, online, stale, errors
+        need = sum(
+            1
+            for _, _, status in rows
+            if status.needs_fleet_update(self.target_commit)
+        )
+        errors = sum(
+            1
+            for _, _, status in rows
+            if status.has_error or (status.online and status.last_result in {
+                "build-failed", "switch-failed", "fetch-failed", "git-failed",
+                "copy-failed", "app-failed",
+            })
+        )
+        return total, online, need, errors

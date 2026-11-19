@@ -23,6 +23,9 @@ INVENTORY_RAW_URL = (
 INVENTORY_API_URL = (
     f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/inventory.json"
 )
+COMMITS_API_URL = (
+    f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/commits/{REPO_BRANCH}"
+)
 SYSTEM_INVENTORY = Path("/etc/nixos/apps/inventory.json")
 
 SSH_USER = "balc"
