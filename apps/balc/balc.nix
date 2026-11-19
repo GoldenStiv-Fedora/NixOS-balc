@@ -9,7 +9,7 @@ let
 
   balcApp = pkgs.stdenv.mkDerivation {
     pname = "balc";
-    version = "0.1.0";
+    version = "0.2.0";
     # balc.nix лежит внутри папки приложения, поэтому исходники — эта же папка.
     src = ./.;
 
